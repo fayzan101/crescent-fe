@@ -16,16 +16,6 @@ import { usePurchaseRequests } from '@/hooks/inventory/purchase request/usePurch
 import { useCreatePurchaseRequest } from '@/hooks/inventory/purchase request/useCreatePurchaseRequest';
 import { useUpdatePurchaseRequest } from '@/hooks/inventory/purchase request/useUpdatePurchaseRequest';
 import { useDeletePurchaseRequest } from '@/hooks/inventory/purchase request/useDeletePurchaseRequest';
-import { useApprovePurchaseRequest } from '@/hooks/inventory/purchase request/useApprovePurchaseRequest';
-import { useRejectPurchaseRequest } from '@/hooks/inventory/purchase request/useRejectPurchaseRequest';
-import { purchaseRequestLineList, resolveItemRecordId, resolveItemUnitOfMeasurement } from '@/lib/inventoryItemMeta';
-
-function formatApiErrorMessage(error, fallback) {
-  const msg = error?.response?.data?.message;
-  if (Array.isArray(msg)) return msg.join('; ');
-  if (typeof msg === 'string' && msg) return msg;
-  return error?.message || fallback;
-}
 
 const PurchaseRequestPage = () => {
   const queryClient = useQueryClient();
@@ -38,8 +28,6 @@ const PurchaseRequestPage = () => {
   const [submitError, setSubmitError] = useState('');
   const [isEditingRequest, setIsEditingRequest] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
-  const [actionPendingId, setActionPendingId] = useState(null);
-  const [rejectReason, setRejectReason] = useState('');
 
   const [user] = useState({ id: 'admin@example.com', userId: 'admin' });
 
@@ -77,10 +65,10 @@ const PurchaseRequestPage = () => {
   const normalizeItems = (data) => {
     return normalizeList(data).map((item) => ({
       ...item,
-      id: resolveItemRecordId(item) || (item.id ?? item.itemId ?? item._id),
+      id: item.id ?? item.itemId ?? item._id,
       name: item.name || item.itemName || '',
       sku: item.sku || item.itemSku || '',
-      unitOfMeasurement: resolveItemUnitOfMeasurement(item),
+      unitOfMeasurement: item.unitOfMeasurement || item.uom || '',
       price: item.price ?? item.unitPrice ?? 0,
     }));
   };
@@ -109,88 +97,57 @@ const PurchaseRequestPage = () => {
       ...store,
       id: store.id ?? store.storeId ?? store._id ?? store.value,
       name: store.name || store.storeName || store.label || '',
+      officeId: store.officeId ?? store.office?.id ?? store.branchId ?? store.office?.officeId ?? '',
     })),
     [storesQuery.data]
   );
 
   const storeOptions = useMemo(
-    () => stores.map((store) => ({ value: String(store.id), label: store.name })),
-    [stores]
+    () => stores
+      .filter((store) => !purchaseFormData.officeId || String(store.officeId) === String(purchaseFormData.officeId))
+      .map((store) => ({ value: String(store.id), label: store.name })),
+    [stores, purchaseFormData.officeId]
   );
 
   const items = useMemo(() => normalizeItems(itemsQuery.data), [itemsQuery.data]);
-
-  const findItemById = (rawId) =>
-    items.find((item) => String(item.id) === String(rawId ?? ''));
 
   const itemOptions = useMemo(
     () => items.map((item) => ({ value: String(item.id), label: item.sku ? `${item.sku} - ${item.name}` : item.name })),
     [items]
   );
 
-  const itemLookup = useMemo(() => {
-    const map = new Map();
-    items.forEach((item) => map.set(String(item.id), item));
-    return map;
-  }, [items]);
-
   const requests = useMemo(() => {
-    return normalizeList(requestsQuery.data).map((request) => {
-      const id = request.purchaseRequestId ?? request.id ?? request.requestId ?? request._id;
-      const lines = purchaseRequestLineList(request).map((line, idx) => {
-        const lineItemId = line.itemId ?? line.id ?? line.inventoryItemId ?? '';
-        const itemMeta = itemLookup.get(String(lineItemId));
-        return {
-          ...line,
-          id: line.purchaseRequestLineId ?? line.id ?? `${id || 'pr'}-line-${idx}`,
-          itemId: lineItemId,
-          itemSku: line.itemSku || line.sku || itemMeta?.sku || '',
-          itemName: line.itemName || line.name || itemMeta?.name || `Item #${lineItemId}`,
-          unitOfMeasurement: resolveItemUnitOfMeasurement(line) || itemMeta?.unitOfMeasurement || '',
-          quantity: Number(line.qty ?? line.quantity ?? line.quantityOrdered ?? 0),
-        };
-      });
-      return {
-        ...request,
-        id,
-        requestNo: request.requestNo || request.purchaseRequestNo || (id != null ? `PR-${id}` : ''),
-        officeId: request.officeId ?? request.office?.officeId ?? request.office?.id ?? '',
-        officeName: request.officeName || request.office?.branchName || request.branchName || '',
-        storeId: request.storeId ?? request.store?.storeId ?? request.store?.id ?? '',
-        storeName: request.storeName || request.store?.storeName || request.store?.name || '',
-        storeLocation: request.store?.location || '',
-        userId: request.requestedByUserId ?? request.userId ?? request.createdBy ?? request.userEmail ?? '',
-        createdAt: request.createdAt || request.createdOn || request.date || new Date().toISOString(),
-        status: String(request.status || request.approvalStatus || 'DRAFT').toUpperCase(),
-        remarks: request.remarks || '',
-        requestedByUserId: request.requestedByUserId ?? null,
-        approvedByUserId: request.approvedByUserId ?? null,
-        approvedAt: request.approvedAt ?? null,
-        rejectedByUserId: request.rejectedByUserId ?? null,
-        rejectedAt: request.rejectedAt ?? null,
-        rejectionReason: request.rejectionReason ?? null,
-        items: lines,
-        lineCount: lines.length,
-      };
-    });
-  }, [itemLookup, requestsQuery.data]);
+    return normalizeList(requestsQuery.data).map((request) => ({
+      ...request,
+      id: request.id ?? request.requestId ?? request.purchaseRequestId ?? request._id,
+      name: request.name || request.requestNo || request.purchaseRequestNo || request.id || '',
+      officeId: request.officeId ?? request.office?.id ?? '',
+      officeName: request.officeName || request.office?.branchName || request.branchName || '',
+      storeId: request.storeId ?? request.store?.id ?? '',
+      storeName: request.storeName || request.store?.name || '',
+      userId: request.userId || request.createdBy || request.userEmail || '',
+      createdAt: request.createdAt || request.createdOn || request.date || new Date().toISOString(),
+      status: String(request.status || request.approvalStatus || 'DRAFT').toUpperCase(),
+      isActive: request.isActive ?? true,
+      items: Array.isArray(request.items) ? request.items : Array.isArray(request.purchaseRequestItems) ? request.purchaseRequestItems : [],
+    }));
+  }, [requestsQuery.data]);
 
   const tableColumns = [
-    { key: 'requestNo', label: 'PR #', width: '16%' },
-    { key: 'officeId', label: 'Office ID', width: '14%', render: (item) => item.officeId ?? 'N/A' },
-    { key: 'storeName', label: 'Store', width: '18%', render: (item) => item.storeName || 'N/A' },
-    { key: 'userId', label: 'Requested By', width: '14%', render: (item) => item.userId || 'N/A' },
-    { key: 'lineCount', label: 'Lines', width: '8%', render: (item) => item.lineCount ?? 0 },
+    { key: 'officeName', label: 'Office', width: '15%' },
+    { key: 'userId', label: 'User ID', width: '20%' },
+    { key: 'id', label: 'Purchased Request', width: '15%' },
     {
       key: 'createdAt',
-      label: 'Created At',
-      width: '18%',
-      render: (item) => new Date(item.createdAt).toLocaleString()
+      label: 'Created On',
+      width: '15%',
+      render: (item) => new Date(item.createdAt).toLocaleDateString()
     },
+    { key: 'section', label: 'Group / Section', width: '15%', render: () => 'General' },
     {
       key: 'status',
       label: 'Status',
-      width: '12%',
+      width: '10%',
       render: (item) => (
         <span className={`px-3 py-1 rounded-full text-xs font-semibold inline-block ${
           item.status === 'APPROVED' || item.status === 'SUBMITTED' ? 'bg-green-100 text-green-700' :
@@ -242,7 +199,7 @@ const PurchaseRequestPage = () => {
       return;
     }
 
-    const selectedItem = findItemById(purchaseFormData.itemId);
+    const selectedItem = items.find((item) => item.id === purchaseFormData.itemId);
     if (!selectedItem) return;
 
     setPurchaseRequestItems((prev) => [...prev, {
@@ -270,10 +227,12 @@ const PurchaseRequestPage = () => {
   };
 
   const buildPayload = () => {
+    const office = offices.find((item) => item.id === purchaseFormData.officeId);
+    const store = stores.find((item) => item.id === purchaseFormData.storeId);
     const itemsToSubmit = [...purchaseRequestItems];
 
     if (purchaseFormData.itemId) {
-      const selectedItem = findItemById(purchaseFormData.itemId);
+      const selectedItem = items.find((item) => item.id === purchaseFormData.itemId);
       if (selectedItem) {
         itemsToSubmit.push({
           id: Date.now(),
@@ -287,19 +246,18 @@ const PurchaseRequestPage = () => {
       }
     }
 
-    const toNumericId = (value) => {
-      if (value === undefined || value === null || value === '') return value;
-      const n = Number(value);
-      return Number.isFinite(n) ? n : value;
-    };
-
     return {
-      officeId: toNumericId(purchaseFormData.officeId),
-      storeId: toNumericId(purchaseFormData.storeId),
-      lines: itemsToSubmit.map((row) => ({
-        itemId: toNumericId(row.itemId),
-        qty: Math.max(1, parseInt(row.quantity, 10) || 1),
-      })),
+      name: selectedRequestId || `PR${String(requests.length + 1).padStart(3, '0')}`,
+      officeId: purchaseFormData.officeId,
+      officeName: office?.branchName || '',
+      storeId: purchaseFormData.storeId,
+      storeName: store?.name || '',
+      userId: user?.id || 'N/A',
+      createdAt: new Date().toISOString(),
+      status: 'DRAFT',
+      isActive: true,
+      items: itemsToSubmit,
+      purchaseRequestItems: itemsToSubmit,
     };
   };
 
@@ -315,7 +273,7 @@ const PurchaseRequestPage = () => {
       closeAfterSuccess('Purchase Request created successfully');
     },
     onError: (error) => {
-      setSubmitError(formatApiErrorMessage(error, 'Failed to create purchase request.'));
+      setSubmitError(error?.response?.data?.message || error?.message || 'Failed to create purchase request.');
     },
   });
 
@@ -325,7 +283,7 @@ const PurchaseRequestPage = () => {
       closeAfterSuccess('Purchase Request updated successfully');
     },
     onError: (error) => {
-      setSubmitError(formatApiErrorMessage(error, 'Failed to update purchase request.'));
+      setSubmitError(error?.response?.data?.message || error?.message || 'Failed to update purchase request.');
     },
   });
 
@@ -335,37 +293,13 @@ const PurchaseRequestPage = () => {
     },
   });
 
-  const { mutate: approvePurchaseRequest } = useApprovePurchaseRequest({
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-      setActionPendingId(null);
-      setRejectReason('');
-    },
-    onError: (error) => {
-      setActionPendingId(null);
-      setSubmitError(formatApiErrorMessage(error, 'Failed to approve purchase request.'));
-    },
-  });
-
-  const { mutate: rejectPurchaseRequest } = useRejectPurchaseRequest({
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-      setActionPendingId(null);
-      setRejectReason('');
-    },
-    onError: (error) => {
-      setActionPendingId(null);
-      setSubmitError(formatApiErrorMessage(error, 'Failed to reject purchase request.'));
-    },
-  });
-
   const filteredRequests = useMemo(() => {
     const term = searchQuery.toLowerCase();
     return requests.filter((request) =>
-      (request.requestNo || '').toLowerCase().includes(term) ||
-      (request.storeName || '').toLowerCase().includes(term) ||
+      (request.officeName || '').toLowerCase().includes(term) ||
       (request.userId || '').toLowerCase().includes(term) ||
-      String(request.id || '').toLowerCase().includes(term)
+      (request.id || '').toLowerCase().includes(term) ||
+      (request.name || '').toLowerCase().includes(term)
     );
   }, [requests, searchQuery]);
 
@@ -393,23 +327,9 @@ const PurchaseRequestPage = () => {
   };
 
   const handleEditRequest = (item) => {
-    const normalizedModalItems = (item.items || purchaseRequestLineList(item) || []).map((line, idx) => {
-      const lineItemId = line.itemId ?? line.id ?? line.inventoryItemId ?? '';
-      const itemMeta = itemLookup.get(String(lineItemId));
-      return {
-        ...line,
-        id: line.id ?? line.purchaseRequestLineId ?? `${item.id || 'pr'}-line-${idx}`,
-        itemId: lineItemId,
-        itemSku: line.itemSku || line.sku || itemMeta?.sku || '',
-        itemName: line.itemName || line.name || itemMeta?.name || `Item #${lineItemId}`,
-        unitOfMeasurement: resolveItemUnitOfMeasurement(line) || itemMeta?.unitOfMeasurement || '',
-        quantity: Number(line.quantity ?? line.qty ?? line.quantityOrdered ?? 0),
-      };
-    });
-
     setSelectedRequestId(item.id);
     setIsEditingRequest(true);
-    setPurchaseRequestItems(normalizedModalItems);
+    setPurchaseRequestItems(Array.isArray(item.items) ? item.items : []);
     setPurchaseFormData({
       officeId: item.officeId || '',
       storeId: item.storeId || '',
@@ -426,30 +346,7 @@ const PurchaseRequestPage = () => {
     setPreviewRequest(item);
   };
 
-  const previewItems = previewRequest
-    ? (Array.isArray(previewRequest.items) ? previewRequest.items : purchaseRequestLineList(previewRequest))
-    : [];
-  const isPreviewActionPending = actionPendingId != null && String(actionPendingId) === String(previewRequest?.id);
-  const canApprove = previewRequest?.status === 'DRAFT' || previewRequest?.status === 'SUBMITTED' || previewRequest?.status === 'PENDING';
-  const canReject = canApprove;
-
-  const handleApproveFromPreview = () => {
-    if (!previewRequest?.id) return;
-    setSubmitError('');
-    setActionPendingId(previewRequest.id);
-    approvePurchaseRequest(previewRequest.id);
-  };
-
-  const handleRejectFromPreview = () => {
-    if (!previewRequest?.id) return;
-    if (!rejectReason.trim()) {
-      setSubmitError('Rejection reason is required.');
-      return;
-    }
-    setSubmitError('');
-    setActionPendingId(previewRequest.id);
-    rejectPurchaseRequest({ id: previewRequest.id, reason: rejectReason.trim() });
-  };
+  const previewItems = previewRequest?.items || previewRequest?.purchaseRequestItems || [];
 
   return (
     <div className="bg-white p-8 min-h-screen scrollbar-hide m-5 rounded-lg">
@@ -541,14 +438,14 @@ const PurchaseRequestPage = () => {
                       placeholder="Select Item"
                       value={purchaseFormData.itemId}
                       onChange={(e) => {
-                        const selected = findItemById(e.target.value);
+                        const selected = items.find((item) => item.id === e.target.value);
                         if (selected) {
                           setPurchaseFormData((prev) => ({
                             ...prev,
-                            itemId: String(selected.id ?? ''),
+                            itemId: selected.id,
                             itemSku: selected.sku,
                             itemName: selected.name,
-                            unitOfMeasurement: resolveItemUnitOfMeasurement(selected),
+                            unitOfMeasurement: selected.unitOfMeasurement,
                           }));
                         }
                       }}
@@ -559,7 +456,7 @@ const PurchaseRequestPage = () => {
                   </FieldWrapper>
 
                   <FieldWrapper label="Unit of Measurement" required className="text-sm">
-                    <Input value={purchaseFormData.unitOfMeasurement ?? ''} disabled className="text-sm py-2 bg-gray-50" />
+                    <Input value={purchaseFormData.unitOfMeasurement} disabled className="text-sm py-2 bg-gray-50" />
                   </FieldWrapper>
                 </div>
 
@@ -651,14 +548,12 @@ const PurchaseRequestPage = () => {
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  ['PR #', previewRequest.requestNo || `PR-${previewRequest.id}`],
-                  ['Office ID', previewRequest.officeId ?? 'N/A'],
+                  ['Office', previewRequest.officeName || 'N/A'],
                   ['Store', previewRequest.storeName || 'N/A'],
-                  ['Store Location', previewRequest.storeLocation || 'N/A'],
-                  ['Requested By User ID', previewRequest.userId || 'N/A'],
+                  ['User', previewRequest.userId || 'N/A'],
+                  ['Request No.', previewRequest.id || 'N/A'],
                   ['Created On', new Date(previewRequest.createdAt).toLocaleString()],
                   ['Status', previewRequest.status || 'DRAFT'],
-                  ['Remarks', previewRequest.remarks || 'N/A'],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
@@ -681,12 +576,12 @@ const PurchaseRequestPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {previewItems.map((item, idx) => (
-                          <tr key={item.id ?? item.purchaseRequestLineId ?? `line-${idx}`} className="border-b border-gray-200 hover:bg-gray-50">
+                        {previewItems.map((item) => (
+                          <tr key={item.id} className="border-b border-gray-200 hover:bg-gray-50">
                             <td className="px-4 py-3 text-gray-700">{item.itemSku || item.sku || 'N/A'}</td>
                             <td className="px-4 py-3 text-gray-700">{item.itemName || item.name || 'N/A'}</td>
-                            <td className="px-4 py-3 text-gray-700">{item.unitOfMeasurement || item.uom || 'N/A'}</td>
-                            <td className="px-4 py-3 text-gray-700">{item.quantity ?? item.qty ?? 'N/A'}</td>
+                            <td className="px-4 py-3 text-gray-700">{item.unitOfMeasurement || 'N/A'}</td>
+                            <td className="px-4 py-3 text-gray-700">{item.quantity || 'N/A'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -696,30 +591,7 @@ const PurchaseRequestPage = () => {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Rejection reason"
-                  className="text-sm py-2 w-64"
-                  disabled={!canReject || isPreviewActionPending}
-                />
-                <button
-                  onClick={handleRejectFromPreview}
-                  disabled={!canReject || isPreviewActionPending}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isPreviewActionPending ? 'Processing...' : 'Reject'}
-                </button>
-                <button
-                  onClick={handleApproveFromPreview}
-                  disabled={!canApprove || isPreviewActionPending}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isPreviewActionPending ? 'Processing...' : 'Approve'}
-                </button>
-              </div>
+            <div className="flex justify-end px-6 py-4 border-t border-gray-200 bg-white shrink-0">
               <button
                 onClick={() => setPreviewRequest(null)}
                 className="w-40 py-3.5 bg-customBlue text-white hover:bg-customBlue/90 rounded-lg text-sm font-medium transition cursor-pointer"
