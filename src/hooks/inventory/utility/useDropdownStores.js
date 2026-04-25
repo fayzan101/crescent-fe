@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { getDropdownStores } from "@/services/inventory-utility.service";
+import { getStores } from "@/services/inventory-setup.service";
 
+/** Same data as useStores — shares query cache and invalidation with store setup. */
 export const useDropdownStores = (options = {}) => {
   return useQuery({
-    queryKey: ["dropdown-stores"],
-    queryFn: getDropdownStores,
+    queryKey: ["stores"],
+    queryFn: getStores,
     ...options,
   });
 };

@@ -2,7 +2,7 @@ import { store } from "@/redux/store";
 import { loginSuccess, signOut } from "@/redux/slices/userSlice";
 import axios from "axios";
 
-const BASE_URL = 'https://crescent-be.vercel.app/' ||  process.env.NEXT_PUBLIC_API_URL
+const BASE_URL =  process.env.NEXT_PUBLIC_API_URL || 'https://crescent-be.vercel.app/'
 const AUTH_BASE = '/api/v1/auth';
 
 export const publicRequest = axios.create({

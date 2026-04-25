@@ -68,7 +68,7 @@ const Select = ({
               <button
                 key={option.value}
                 type="button"
-z                disabled={value===option.value && disabled}
+                disabled={value===option.value && disabled}
                 onClick={() => handleSelect(option.value)}
                 className={`w-full text-left px-3 py-2  hover:bg-[#E2E6F9] hover:text-black transition-colors ${
                   value === option.value 

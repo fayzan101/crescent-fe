@@ -1,4 +1,5 @@
 import { userRequest } from "@/lib/RequestMethods";
+import { getStores } from "@/services/inventory-setup.service";
 
 // Get dropdown categories
 export const getDropdownCategories = async () => {
@@ -20,15 +21,8 @@ export const getDropdownItems = async () => {
   }
 };
 
-// Get dropdown stores
-export const getDropdownStores = async () => {
-  try {
-    const response = await userRequest.get("/api/v1/dropdown/stores");
-    return response.data;
-  } catch (error) {
-    throw error;
-  }
-};
+// Store options for dropdowns (same list as GET /api/v1/stores)
+export const getDropdownStores = async () => getStores();
 
 // Get dropdown vendors
 export const getDropdownVendors = async () => {
