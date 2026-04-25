@@ -1,10 +1,17 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Minus, Search, Filter, Download, Eye, Calendar, TrendingUp, Package, DollarSign, X, Loader } from 'lucide-react';
 import FieldWrapper from '../../ui/FieldWrapper';
 import Input from '../../ui/Input';
 import Textarea from '../../ui/TextArea';
+import { useDashboardStats } from '@/hooks/inventory/dashboard/useDashboardStats';
+import { useDropdownStores } from '@/hooks/inventory/utility/useDropdownStores';
+import { useDropdownItems } from '@/hooks/inventory/utility/useDropdownItems';
+import { useSearchGuards } from '@/hooks/inventory/utility/useSearchGuards';
+import { useBulkIssuance } from '@/hooks/inventory/movements/useBulkIssuance';
+import { normalizeApiList } from '@/lib/normalizeApiList';
+import { resolveItemRecordId, resolveItemUnitOfMeasurement } from '@/lib/inventoryItemMeta';
 
 const  OverviewPage = () => {
     const [activeSubTab, setActiveSubTab] = useState('inventory-card');
@@ -32,18 +39,35 @@ const  OverviewPage = () => {
         { id: 'inventory-card', label: 'Inventory Card', highlight: true },
     ];
 
+    const { data: dashboardStats } = useDashboardStats();
+    const { data: storesRaw = [] } = useDropdownStores();
+    const { data: itemsRaw = [] } = useDropdownItems();
+    const { data: guardSearchResult } = useSearchGuards(formData.serviceNo);
+    const { mutateAsync: submitBulkIssuance } = useBulkIssuance();
+
+    useEffect(() => {
+        const guard = guardSearchResult?.data?.guard || guardSearchResult?.guard || guardSearchResult?.data || {};
+        const resolvedName = guard?.name || guard?.guardName || guard?.fullName || '';
+        if (!resolvedName) return;
+        setFormData((prev) => ({ ...prev, guardName: resolvedName }));
+    }, [guardSearchResult]);
+
+    const statsPayload = dashboardStats?.data || dashboardStats || {};
     const stats = [
-        { label: 'Total Items', value: 156, color: '#7C3AED', percentage: 78 },
-        { label: 'Low Stock Alert', value: 12, color: '#FB923C', percentage: 45 },
-        { label: 'New Products', value: 8, color: '#EF4444', percentage: 30 },
-        { label: 'Inventory Card', value: 24, color: '#10B981', percentage: 60 },
+        { label: 'Items', value: Number(statsPayload.items ?? statsPayload.totalItems ?? 0) },
+        { label: 'Stores', value: Number(statsPayload.stores ?? 0) },
+        { label: 'Purchase Requests', value: Number(statsPayload.purchaseRequests ?? 0) },
+        { label: 'Purchase Orders', value: Number(statsPayload.purchaseOrders ?? 0) },
+        { label: 'GRN', value: Number(statsPayload.grn ?? 0) },
+        { label: 'Issuance', value: Number(statsPayload.issuance ?? 0) },
+        { label: 'Returns', value: Number(statsPayload.returns ?? 0) },
+        { label: 'Transfers', value: Number(statsPayload.transfers ?? 0) },
     ];
 
-    const stores = [
-        { id: '1', name: 'Main Store' },
-        { id: '2', name: 'Secondary Store' },
-        { id: '3', name: 'Warehouse A' },
-    ];
+    const stores = normalizeApiList(storesRaw).map((store) => ({
+        id: String(store.id ?? store.storeId ?? store.value ?? ''),
+        name: store.name || store.storeName || store.label || 'N/A',
+    }));
 
     const locations = [
         { id: '1', locationName: 'Office Building' },
@@ -51,11 +75,13 @@ const  OverviewPage = () => {
         { id: '3', locationName: 'Storage Area' },
     ];
 
-    const storeInventory = [
-        { id: '1', name: 'Laptop', sku: 'LP001', quantityAvailable: 15 },
-        { id: '2', name: 'Mouse', sku: 'MS001', quantityAvailable: 32 },
-        { id: '3', name: 'Keyboard', sku: 'KB001', quantityAvailable: 18 },
-    ];
+    const storeInventory = normalizeApiList(itemsRaw).map((item) => ({
+        id: resolveItemRecordId(item) || String(item.id ?? item.itemId ?? item.value ?? ''),
+        name: item.name || item.itemName || item.label || 'N/A',
+        sku: item.sku || item.itemSku || 'N/A',
+        quantityAvailable: Number(item.quantityAvailable ?? item.availableQty ?? 0),
+        resolvedUom: resolveItemUnitOfMeasurement(item),
+    }));
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -77,7 +103,9 @@ const  OverviewPage = () => {
             return;
         }
 
-        const selectedItem = storeInventory.find(item => item.id === formData.selectItem);
+        const selectedItem = storeInventory.find(
+            (item) => String(item.id) === String(formData.selectItem)
+        );
         if (!selectedItem) return;
 
         const reviewItem = {
@@ -85,7 +113,8 @@ const  OverviewPage = () => {
             itemId: formData.selectItem,
             itemName: selectedItem.name,
             sku: selectedItem.sku,
-            unitOfMeasurement: formData.itemSize || 'Unit',
+            unitOfMeasurement:
+                selectedItem.resolvedUom || formData.itemSize || 'Unit',
             quantity: parseInt(formData.quantity),
         };
 
@@ -121,11 +150,25 @@ const  OverviewPage = () => {
         if (reviewItems.length === 0) return;
         
         setIsSubmitting(true);
-        // Simulate API call
-        setTimeout(() => {
+        try {
+            const payload = {
+                serviceNo: formData.serviceNo,
+                guardName: formData.guardName,
+                isFirstSupply: formData.newOldSupply === 'yes',
+                storeId: formData.selectStore || undefined,
+                locationId: formData.selectLocation || undefined,
+                items: reviewItems.map((item) => ({
+                    itemId: item.itemId,
+                    quantity: item.quantity,
+                    uom: item.unitOfMeasurement,
+                })),
+            };
+            await submitBulkIssuance(payload);
             setIsSubmitting(false);
             handleCancel();
-        }, 2000);
+        } catch (_error) {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -133,7 +176,7 @@ const  OverviewPage = () => {
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 {stats.map((stat, index) => (
-                    <div key={index} className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-lg">
+                    <div key={index} className="bg-linear-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-lg">
                         <div className="flex flex-col items-center">
                             <div className="w-20 h-20 mb-4 rounded-full border-4 border-white/20 flex items-center justify-center">
                                 <span className="text-2xl font-bold">{stat.value}</span>

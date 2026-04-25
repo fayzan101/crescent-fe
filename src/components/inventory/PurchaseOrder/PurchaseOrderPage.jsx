@@ -9,9 +9,26 @@ import Input from '../../ui/Input';
 import Select from '../../ui/Select';
 import { useOffices } from '@/hooks/office/useOffices';
 import { useDropdownItems } from '@/hooks/inventory/utility/useDropdownItems';
+import { useDropdownVendors } from '@/hooks/inventory/utility/useDropdownVendors';
 import { usePurchaseOrders } from '@/hooks/inventory/purchase orders/usePurchaseOrders';
 import { useCreatePurchaseOrder } from '@/hooks/inventory/purchase orders/useCreatePurchaseOrder';
 import { useDeletePurchaseOrder } from '@/hooks/inventory/purchase orders/useDeletePurchaseOrder';
+import { useApprovePurchaseOrder } from '@/hooks/inventory/purchase orders/useApprovePurchaseOrder';
+import { useRejectPurchaseOrder } from '@/hooks/inventory/purchase orders/useRejectPurchaseOrder';
+import { usePurchaseRequests } from '@/hooks/inventory/purchase request/usePurchaseRequests';
+import {
+    resolveItemRecordId,
+    resolveItemUnitOfMeasurement,
+    purchaseRequestLineList,
+} from '@/lib/inventoryItemMeta';
+
+function toDatetimeLocalValue(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 const PurchaseOrderPage = () => {
     const queryClient = useQueryClient();
@@ -20,10 +37,14 @@ const PurchaseOrderPage = () => {
     const [previewPO, setPreviewPO] = useState(null);
     const [deleteModal, setDeleteModal] = useState({ isOpen: false, poId: null });
     const [submitError, setSubmitError] = useState('');
+    const [poActionPendingId, setPoActionPendingId] = useState(null);
+    const [poRejectReason, setPoRejectReason] = useState('');
 
     const [formData, setFormData] = useState({
         officeId: '',
         office: '',
+        vendorId: '',
+        vendorName: '',
         user: '1 - Admin User',
         date: '',
         expectedDeliveryDate: '',
@@ -63,8 +84,10 @@ const PurchaseOrderPage = () => {
     };
 
     const purchaseOrdersQuery = usePurchaseOrders();
+    const purchaseRequestsQuery = usePurchaseRequests();
     const officesQuery = useOffices(undefined, { enabled: true });
     const itemsQuery = useDropdownItems();
+    const vendorsQuery = useDropdownVendors();
 
     const offices = useMemo(() => {
         return normalizeList(officesQuery.data).map((office) => ({
@@ -82,9 +105,9 @@ const PurchaseOrderPage = () => {
     const normalizedItems = useMemo(() => {
         return normalizeList(itemsQuery.data).map((item) => ({
             ...item,
-            id: item.id ?? item.itemId ?? item._id ?? item.value,
+            id: resolveItemRecordId(item) || (item.id ?? item.itemId ?? item._id ?? item.value),
             name: item.name || item.itemName || item.label || '',
-            unitOfMeasurement: item.unitOfMeasurement || item.uom || item.unit || '',
+            unitOfMeasurement: resolveItemUnitOfMeasurement(item),
             price: item.price ?? item.unitPrice ?? item.rate ?? 0,
         }));
     }, [itemsQuery.data]);
@@ -94,23 +117,78 @@ const PurchaseOrderPage = () => {
         [normalizedItems]
     );
 
+    const normalizedVendors = useMemo(() => {
+        return normalizeList(vendorsQuery.data).map((vendor) => ({
+            ...vendor,
+            id: vendor.id ?? vendor.vendorId ?? vendor._id,
+            name: vendor.name || vendor.vendorName || vendor.label || '',
+        }));
+    }, [vendorsQuery.data]);
+
+    const vendorOptions = useMemo(
+        () => normalizedVendors.map((vendor) => ({ value: String(vendor.id), label: vendor.name })),
+        [normalizedVendors]
+    );
+
     const normalizedOrders = useMemo(() => {
         return normalizeList(purchaseOrdersQuery.data).map((order) => ({
             ...order,
-            id: order.id ?? order.purchaseOrderId ?? order._id,
-            store: order.store || order.officeName || order.branchName || '',
+            id: order.purchaseOrderId ?? order.id ?? order._id,
+            officeId: order.officeId ?? order.office?.officeId ?? order.office?.id ?? '',
+            storeId: order.storeId ?? order.store?.storeId ?? order.store?.id ?? '',
+            storeName: order.storeName || order.store?.storeName || order.store?.name || '',
+            vendorId: order.vendorId ?? order.vendor?.vendorId ?? order.vendor?.id ?? '',
+            vendorName: order.vendorName || order.vendor?.vendorName || order.vendor?.name || '',
             userId: order.userId || order.createdBy || order.userEmail || '',
-            purchasedRequestNo: order.purchasedRequestNo || order.purchaseRequestNo || order.prNo || '',
-            purchaseOrderNo: order.purchaseOrderNo || order.poNo || order.code || '',
+            lines: Array.isArray(order.lines) ? order.lines : Array.isArray(order.items) ? order.items : [],
+            lineCount: Array.isArray(order.lines) ? order.lines.length : Array.isArray(order.items) ? order.items.length : 0,
+            purchasedRequestNo: order.purchasedRequestNo || order.purchaseRequestNo || order.prNo || (order.purchaseRequestId ? `PR-${order.purchaseRequestId}` : ''),
+            purchaseOrderNo: order.purchaseOrderNo || order.poNo || order.code || (order.purchaseOrderId ? `PO-${order.purchaseOrderId}` : ''),
             createdOn: order.createdOn || order.createdAt || order.date || '',
             approvalStatus: String(order.approvalStatus || order.status || 'DRAFT').toUpperCase(),
             deliveryStatus: String(order.deliveryStatus || order.delivery_state || 'PENDING').toUpperCase(),
         }));
     }, [purchaseOrdersQuery.data]);
 
+    const normalizedPurchaseRequests = useMemo(() => {
+        return normalizeList(purchaseRequestsQuery.data).map((request) => {
+            const id = request.id ?? request.requestId ?? request.purchaseRequestId ?? request._id;
+            const lines = purchaseRequestLineList(request);
+            return {
+                ...request,
+                id,
+                requestNo:
+                    request.purchaseRequestNo ||
+                    request.requestNo ||
+                    request.name ||
+                    (id != null ? `PR-${id}` : ''),
+                items: lines,
+                lineCount: lines.length,
+                officeId: request.officeId ?? request.office?.id ?? '',
+                officeName: request.officeName || request.office?.branchName || request.branchName || '',
+                storeId: request.storeId ?? request.store?.id ?? '',
+                storeName: request.storeName || request.store?.name || '',
+            };
+        });
+    }, [purchaseRequestsQuery.data]);
+
+    const purchaseRequestOptions = useMemo(
+        () =>
+            normalizedPurchaseRequests
+                .filter((request) => request.id)
+                .map((request) => ({
+                    value: String(request.id),
+                    label: String(request.requestNo || `PR-${request.id}`),
+                })),
+        [normalizedPurchaseRequests]
+    );
+
     const resetForm = () => ({
+        purchaseRequestId: '',
         officeId: '',
         office: '',
+        vendorId: '',
+        vendorName: '',
         user: '1 - Admin User',
         date: '',
         expectedDeliveryDate: '',
@@ -154,10 +232,41 @@ const PurchaseOrderPage = () => {
         },
     });
 
+    const { mutate: approvePurchaseOrder } = useApprovePurchaseOrder({
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+            setPoActionPendingId(null);
+            setPreviewPO((prev) =>
+                prev ? { ...prev, approvalStatus: 'APPROVED' } : prev
+            );
+        },
+        onError: (error) => {
+            setPoActionPendingId(null);
+            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to approve purchase order.');
+        },
+    });
+
+    const { mutate: rejectPurchaseOrder } = useRejectPurchaseOrder({
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+            setPoActionPendingId(null);
+            setPreviewPO((prev) =>
+                prev ? { ...prev, approvalStatus: 'REJECTED' } : prev
+            );
+            setPoRejectReason('');
+        },
+        onError: (error) => {
+            setPoActionPendingId(null);
+            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to reject purchase order.');
+        },
+    });
+
     const filteredOrders = useMemo(() => {
         const term = searchTerm.toLowerCase();
         return normalizedOrders.filter((order) =>
-            (order.store || '').toLowerCase().includes(term) ||
+            (order.storeName || '').toLowerCase().includes(term) ||
+            (order.vendorName || '').toLowerCase().includes(term) ||
+            String(order.officeId || '').toLowerCase().includes(term) ||
             (order.userId || '').toLowerCase().includes(term) ||
             (order.purchasedRequestNo || '').toLowerCase().includes(term) ||
             (order.purchaseOrderNo || '').toLowerCase().includes(term)
@@ -165,11 +274,13 @@ const PurchaseOrderPage = () => {
     }, [normalizedOrders, searchTerm]);
 
     const tableColumns = [
-        { key: 'store', label: 'Store', width: '15%' },
-        { key: 'userId', label: 'User', width: '15%' },
-        { key: 'purchasedRequestNo', label: 'PR #', width: '12%' },
-        { key: 'purchaseOrderNo', label: 'PO #', width: '12%' },
-        { key: 'createdOn', label: 'Created On', width: '15%' },
+        { key: 'purchaseOrderNo', label: 'PO #', width: '14%' },
+        { key: 'purchasedRequestNo', label: 'PR #', width: '14%' },
+        { key: 'officeId', label: 'Office ID', width: '12%', render: (item) => item.officeId ?? 'N/A' },
+        { key: 'storeName', label: 'Store', width: '16%', render: (item) => item.storeName || 'N/A' },
+        { key: 'vendorName', label: 'Vendor', width: '16%', render: (item) => item.vendorName || 'N/A' },
+        { key: 'lineCount', label: 'Lines', width: '8%', render: (item) => item.lineCount ?? 0 },
+        { key: 'createdOn', label: 'Created At', width: '16%', render: (item) => item.createdOn ? new Date(item.createdOn).toLocaleString() : 'N/A' },
         {
             key: 'approvalStatus',
             label: 'Approval Status',
@@ -283,38 +394,76 @@ const PurchaseOrderPage = () => {
         }));
     };
 
+    const handleSaveCurrentItemToReview = () => {
+        const current = formData.currentItem;
+        if (!current.itemId || current.quantityOrdered < 1) return;
+
+        const qty = Math.max(1, Number.parseInt(current.quantityOrdered, 10) || 1);
+        const unitPriceNum = Number(current.unitPrice) || 0;
+        const nextRow = {
+            ...current,
+            itemId: String(current.itemId),
+            quantityOrdered: qty,
+            unitPrice: String(current.unitPrice ?? ''),
+            totalPrice: String((qty * unitPriceNum).toFixed(2)),
+        };
+
+        setFormData((prev) => {
+            const existingIndex = prev.poItems.findIndex(
+                (row) => String(row.itemId) === String(current.itemId)
+            );
+            if (existingIndex >= 0) {
+                const updated = [...prev.poItems];
+                updated[existingIndex] = { ...updated[existingIndex], ...nextRow };
+                return { ...prev, poItems: updated };
+            }
+            return {
+                ...prev,
+                poItems: [...prev.poItems, { ...nextRow, id: Date.now() }],
+            };
+        });
+    };
+
     const handleRemoveItem = (id) => {
         setFormData((prev) => ({ ...prev, poItems: prev.poItems.filter((item) => item.id !== id) }));
     };
 
     const handleSubmit = () => {
         if (!formData.officeId) return;
-
+        if (!formData.purchaseRequestId) {
+            setSubmitError('Please select a Purchase Request first.');
+            return;
+        }
+        if (!formData.vendorId) {
+            setSubmitError('Please select a Vendor first.');
+            return;
+        }
         const itemsToSubmit = [...formData.poItems];
-        if (formData.currentItem.itemId && formData.currentItem.unitPrice) {
-            itemsToSubmit.push({ ...formData.currentItem, id: Date.now() });
+
+        if (itemsToSubmit.length === 0) {
+            setSubmitError('Please add at least one PO line.');
+            return;
         }
 
-        if (itemsToSubmit.length === 0) return;
+        const purchaseRequestId = Number.parseInt(formData.purchaseRequestId, 10);
+        const vendorId = Number.parseInt(formData.vendorId, 10);
+
+        if (!Number.isInteger(purchaseRequestId) || purchaseRequestId < 1) {
+            setSubmitError('Purchase Request must be a valid ID.');
+            return;
+        }
+        if (!Number.isInteger(vendorId) || vendorId < 1) {
+            setSubmitError('Vendor must be a valid ID.');
+            return;
+        }
 
         setSubmitError('');
         createPurchaseOrder({
-            officeId: formData.officeId,
-            office: formData.office,
-            user: formData.user,
-            date: formData.date || new Date().toISOString(),
-            expectedDeliveryDate: formData.expectedDeliveryDate,
-            taxAmount: formData.taxAmount,
-            shippingCost: formData.shippingCost,
-            discountAmount: formData.discountAmount,
-            notes: formData.notes,
-            poItems: itemsToSubmit.map((item) => ({
-                itemId: item.itemId,
-                itemName: item.itemName,
-                unitOfMeasurement: item.unitOfMeasurement,
-                quantityOrdered: item.quantityOrdered,
-                unitPrice: item.unitPrice,
-                totalPrice: item.totalPrice,
+            purchaseRequestId,
+            vendorId,
+            lines: itemsToSubmit.map((item) => ({
+                itemId: Number(item.itemId),
+                qty: Math.max(1, Number.parseInt(item.quantityOrdered, 10) || 1),
             })),
         });
     };
@@ -328,6 +477,26 @@ const PurchaseOrderPage = () => {
     const handleConfirmDelete = () => {
         if (!deleteModal.poId) return;
         deletePurchaseOrder(deleteModal.poId);
+    };
+
+    const handleApprovePO = () => {
+        const id = previewPO?.id;
+        if (!id) return;
+        setSubmitError('');
+        setPoActionPendingId(id);
+        approvePurchaseOrder(id);
+    };
+
+    const handleRejectPO = () => {
+        const id = previewPO?.id;
+        if (!id) return;
+        if (!poRejectReason.trim()) {
+            setSubmitError('Rejection reason is required.');
+            return;
+        }
+        setSubmitError('');
+        setPoActionPendingId(id);
+        rejectPurchaseOrder({ id, reason: poRejectReason.trim() });
     };
 
     return (
@@ -351,8 +520,8 @@ const PurchaseOrderPage = () => {
 
             <div className="pb-6 md:pb-8">
                 <DataTable
-                    isLoading={purchaseOrdersQuery.isLoading || officesQuery.isLoading || itemsQuery.isLoading}
-                    error={purchaseOrdersQuery.error?.message || officesQuery.error?.message || itemsQuery.error?.message || null}
+                    isLoading={purchaseOrdersQuery.isLoading || purchaseRequestsQuery.isLoading || officesQuery.isLoading || itemsQuery.isLoading}
+                    error={purchaseOrdersQuery.error?.message || purchaseRequestsQuery.error?.message || officesQuery.error?.message || itemsQuery.error?.message || null}
                     items={filteredOrders}
                     columns={tableColumns}
                     showView={true}
@@ -378,7 +547,91 @@ const PurchaseOrderPage = () => {
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                <FieldWrapper label="Purchase Request" required className="text-sm">
+                                    <Select
+                                        placeholder="Select PR"
+                                        value={formData.purchaseRequestId}
+                                        onChange={(e) => {
+                                            const prId = String(e.target.value);
+                                            const selectedRequest = normalizedPurchaseRequests.find(
+                                                (req) => String(req.id) === prId
+                                            );
+                                            const rawLines = selectedRequest?.items || [];
+                                            const requestItems = rawLines.map((item, index) => {
+                                                const rawItemId = item.itemId ?? item.id ?? item.inventoryItemId ?? '';
+                                                const catalog = normalizedItems.find(
+                                                    (ni) => String(ni.id) === String(rawItemId)
+                                                );
+                                                const qty =
+                                                    Number(item.quantity ?? item.qty ?? item.quantityOrdered ?? 1) || 1;
+                                                const price =
+                                                    Number(item.unitPrice ?? item.price ?? catalog?.price ?? 0) || 0;
+                                                return {
+                                                    id: item.id ?? item.lineId ?? `pr-line-${index}-${rawItemId}`,
+                                                    itemId: catalog ? String(catalog.id) : String(rawItemId),
+                                                    itemName:
+                                                        item.itemName ||
+                                                        item.name ||
+                                                        catalog?.name ||
+                                                        (rawItemId ? `Item ${rawItemId}` : 'Unknown item'),
+                                                    unitOfMeasurement:
+                                                        resolveItemUnitOfMeasurement(item) ||
+                                                        catalog?.unitOfMeasurement ||
+                                                        '',
+                                                    quantityOrdered: qty,
+                                                    unitPrice: String(price),
+                                                    totalPrice: String(qty * price),
+                                                };
+                                            });
+                                            const first = requestItems[0];
+                                            const officeIdVal = selectedRequest?.officeId ?? selectedRequest?.office?.id ?? '';
+                                            const officeLabel =
+                                                selectedRequest?.officeName ||
+                                                selectedRequest?.office?.branchName ||
+                                                offices.find((o) => String(o.id) === String(officeIdVal))?.branchName ||
+                                                '';
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                purchaseRequestId: prId,
+                                                poItems: requestItems,
+                                                officeId: officeIdVal !== '' && officeIdVal != null ? String(officeIdVal) : prev.officeId,
+                                                office: officeLabel || prev.office,
+                                                user:
+                                                    selectedRequest?.userId ||
+                                                    selectedRequest?.createdBy ||
+                                                    selectedRequest?.userEmail ||
+                                                    prev.user,
+                                                date: toDatetimeLocalValue(
+                                                    selectedRequest?.createdAt ||
+                                                        selectedRequest?.createdOn ||
+                                                        selectedRequest?.date ||
+                                                        new Date().toISOString()
+                                                ),
+                                                currentItem: first
+                                                    ? {
+                                                          itemId: String(first.itemId),
+                                                          itemName: first.itemName,
+                                                          unitOfMeasurement: first.unitOfMeasurement,
+                                                          quantityOrdered: first.quantityOrdered,
+                                                          unitPrice: first.unitPrice,
+                                                          totalPrice: first.totalPrice,
+                                                      }
+                                                    : {
+                                                          itemId: '',
+                                                          itemName: '',
+                                                          unitOfMeasurement: '',
+                                                          quantityOrdered: 1,
+                                                          unitPrice: '',
+                                                          totalPrice: '',
+                                                      },
+                                            }));
+                                        }}
+                                        className="text-sm"
+                                        options={purchaseRequestOptions}
+                                    />
+                                </FieldWrapper>
+
                                 <FieldWrapper label="Office" required className="text-sm">
                                     <Select
                                         placeholder="Select Office"
@@ -397,6 +650,24 @@ const PurchaseOrderPage = () => {
                                     </Select>
                                 </FieldWrapper>
 
+                                <FieldWrapper label="Vendor" required className="text-sm">
+                                    <Select
+                                        placeholder="Select Vendor"
+                                        value={formData.vendorId}
+                                        onChange={(e) => {
+                                            const selected = normalizedVendors.find((v) => String(v.id) === String(e.target.value));
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                vendorId: e.target.value,
+                                                vendorName: selected?.name || '',
+                                            }));
+                                        }}
+                                        className="text-sm"
+                                        options={vendorOptions}
+                                    >
+                                    </Select>
+                                </FieldWrapper>
+
                                 <FieldWrapper label="User" required className="text-sm">
                                     <Input value={formData.user} disabled placeholder="Auto" className="text-sm py-2 bg-gray-50" />
                                 </FieldWrapper>
@@ -407,21 +678,38 @@ const PurchaseOrderPage = () => {
                             </div>
 
                             <div className="border-t border-gray-200 pt-6 space-y-4">
+                                <p className="text-xs text-gray-500">
+                                    PO lines are auto-loaded from the selected Purchase Request.
+                                </p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <FieldWrapper label="Item Name" required className="text-sm">
                                         <Select
                                             placeholder="Select Item"
                                             value={formData.currentItem.itemId}
                                             onChange={(e) => {
-                                                const selected = normalizedItems.find((item) => String(item.id) === String(e.target.value));
+                                                const selectedFromReview = formData.poItems.find(
+                                                    (item) => String(item.itemId) === String(e.target.value)
+                                                );
+                                                const selectedFromCatalog = normalizedItems.find(
+                                                    (item) => String(item.id) === String(e.target.value)
+                                                );
+                                                const selected = selectedFromReview || selectedFromCatalog;
                                                 setFormData((prev) => ({
                                                     ...prev,
                                                     currentItem: {
                                                         ...prev.currentItem,
-                                                        itemId: selected?.id || '',
-                                                        itemName: selected?.name || '',
-                                                        unitPrice: selected?.price ? String(selected.price) : prev.currentItem.unitPrice,
-                                                        unitOfMeasurement: selected?.unitOfMeasurement || ''
+                                                        itemId: selected?.id || selected?.itemId || '',
+                                                        itemName: selected?.itemName || selected?.name || '',
+                                                        quantityOrdered: Number(selected?.quantityOrdered ?? prev.currentItem.quantityOrdered ?? 1),
+                                                        unitPrice: selected?.unitPrice
+                                                            ? String(selected.unitPrice)
+                                                            : selected?.price
+                                                                ? String(selected.price)
+                                                                : prev.currentItem.unitPrice,
+                                                        totalPrice: selected?.totalPrice
+                                                            ? String(selected.totalPrice)
+                                                            : prev.currentItem.totalPrice,
+                                                        unitOfMeasurement: resolveItemUnitOfMeasurement(selected || {})
                                                     }
                                                 }));
                                             }}
@@ -432,7 +720,7 @@ const PurchaseOrderPage = () => {
                                     </FieldWrapper>
 
                                     <FieldWrapper label="Unit of Measurement" className="text-sm">
-                                        <Input value={formData.currentItem.unitOfMeasurement} disabled placeholder="Auto" className="text-sm py-2 bg-gray-50" />
+                                        <Input value={formData.currentItem.unitOfMeasurement ?? ''} disabled placeholder="Auto" className="text-sm py-2 bg-gray-50" />
                                     </FieldWrapper>
                                 </div>
 
@@ -456,10 +744,11 @@ const PurchaseOrderPage = () => {
                                 <div className="flex justify-end">
                                     <button
                                         type="button"
-                                        onClick={handleAddItem}
-                                        className="rounded-lg border border-customBlue px-4 py-2 text-sm font-medium text-customBlue hover:bg-blue-50"
+                                        onClick={handleSaveCurrentItemToReview}
+                                        className="rounded-lg border border-customBlue px-4 py-2 text-sm font-medium text-customBlue hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled={!formData.currentItem.itemId}
                                     >
-                                        Add Item
+                                        Save
                                     </button>
                                 </div>
 
@@ -473,7 +762,9 @@ const PurchaseOrderPage = () => {
                                             <thead>
                                                 <tr className="bg-gray-50 border-b border-gray-200">
                                                     <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">S.No.</th>
+                                                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Item ID</th>
                                                     <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Item Name</th>
+                                                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">UOM</th>
                                                     <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Qty</th>
                                                     <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Unit Price</th>
                                                     <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Total</th>
@@ -484,7 +775,9 @@ const PurchaseOrderPage = () => {
                                                 {formData.poItems.map((item, index) => (
                                                     <tr key={item.id} className="border-b border-gray-200 hover:bg-gray-50">
                                                         <td className="py-3 px-4 text-sm text-gray-700">{index + 1}</td>
-                                                        <td className="py-3 px-4 text-sm text-gray-700">{item.itemName}</td>
+                                                        <td className="py-3 px-4 text-sm text-gray-700">{item.itemId || 'N/A'}</td>
+                                                        <td className="py-3 px-4 text-sm text-gray-700">{item.itemName || 'N/A'}</td>
+                                                        <td className="py-3 px-4 text-sm text-gray-700">{item.unitOfMeasurement || item.uom || 'N/A'}</td>
                                                         <td className="py-3 px-4 text-sm font-semibold text-gray-700">{item.quantityOrdered}</td>
                                                         <td className="py-3 px-4 text-sm text-gray-700">{item.unitPrice}</td>
                                                         <td className="py-3 px-4 text-sm font-semibold text-gray-700">{item.totalPrice}</td>
@@ -533,11 +826,13 @@ const PurchaseOrderPage = () => {
                         <div className="flex-1 overflow-y-auto px-6 py-6">
                             <div className="grid grid-cols-2 gap-4">
                                 {[
-                                    ['Store', previewPO.store],
+                                    ['Office ID', previewPO.officeId || 'N/A'],
+                                    ['Store', previewPO.storeName || 'N/A'],
+                                    ['Vendor', previewPO.vendorName || 'N/A'],
                                     ['User', previewPO.userId],
                                     ['PR #', previewPO.purchasedRequestNo],
                                     ['PO #', previewPO.purchaseOrderNo],
-                                    ['Created On', previewPO.createdOn],
+                                    ['Created On', previewPO.createdOn ? new Date(previewPO.createdOn).toLocaleString() : 'N/A'],
                                     ['Approval Status', previewPO.approvalStatus],
                                     ['Delivery Status', previewPO.deliveryStatus],
                                 ].map(([label, value]) => (
@@ -547,9 +842,56 @@ const PurchaseOrderPage = () => {
                                     </div>
                                 ))}
                             </div>
+
+                            {(Array.isArray(previewPO.lines) ? previewPO.lines : []).length > 0 && (
+                                <div className="mt-6 border-t border-gray-200 pt-4">
+                                    <h3 className="text-sm font-semibold text-gray-900 mb-3">PO Lines</h3>
+                                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="bg-gray-50 border-b border-gray-200">
+                                                    <th className="py-2 px-3 text-left font-semibold text-gray-700">Item ID</th>
+                                                    <th className="py-2 px-3 text-left font-semibold text-gray-700">Qty</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {previewPO.lines.map((line, idx) => (
+                                                    <tr key={line.id ?? line.purchaseOrderLineId ?? `po-line-${idx}`} className="border-b border-gray-200">
+                                                        <td className="py-2 px-3 text-gray-700">{line.itemId ?? 'N/A'}</td>
+                                                        <td className="py-2 px-3 text-gray-700">{line.qty ?? line.quantity ?? 'N/A'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        <div className="flex justify-end px-6 py-4 border-t border-gray-200 bg-white shrink-0">
+                        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    value={poRejectReason}
+                                    onChange={(e) => setPoRejectReason(e.target.value)}
+                                    placeholder="Rejection reason"
+                                    className="text-sm py-2 w-48"
+                                    disabled={poActionPendingId === previewPO.id || previewPO.approvalStatus === 'APPROVED' || previewPO.approvalStatus === 'REJECTED'}
+                                />
+                                <button
+                                    onClick={handleRejectPO}
+                                    disabled={poActionPendingId === previewPO.id || previewPO.approvalStatus === 'APPROVED' || previewPO.approvalStatus === 'REJECTED'}
+                                    className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {poActionPendingId === previewPO.id ? 'Processing...' : 'Reject'}
+                                </button>
+                                <button
+                                    onClick={handleApprovePO}
+                                    disabled={poActionPendingId === previewPO.id || previewPO.approvalStatus === 'APPROVED' || previewPO.approvalStatus === 'REJECTED'}
+                                    className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {poActionPendingId === previewPO.id ? 'Processing...' : 'Approve'}
+                                </button>
+                            </div>
                             <button
                                 onClick={() => setPreviewPO(null)}
                                 className="w-40 py-3.5 bg-customBlue text-white hover:bg-customBlue/90 rounded-lg text-sm font-medium transition cursor-pointer"
