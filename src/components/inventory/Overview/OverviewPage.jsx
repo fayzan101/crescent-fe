@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Minus, Search, Filter, Download, Eye, Calendar, TrendingUp, Package, DollarSign, X, Loader } from 'lucide-react';
 import FieldWrapper from '../../ui/FieldWrapper';
+import { Trash2 } from "lucide-react";
 import Input from '../../ui/Input';
 import Textarea from '../../ui/TextArea';
 import { useDashboardStats } from '@/hooks/inventory/dashboard/useDashboardStats';
