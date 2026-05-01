@@ -9,6 +9,7 @@ import Input from '../../ui/Input';
 import Select from '../../ui/Select';
 import EditModal from '@/components/components/EditModal';
 import { useItems } from '@/hooks/inventory/items/useItems';
+import { useWorkflowSummary } from '@/hooks/inventory/items/useWorkflowSummary';
 import { useCreateItem } from '@/hooks/inventory/items/useCreateItem';
 import { useUpdateItem } from '@/hooks/inventory/items/useUpdateItem';
 import { useDeleteItem } from '@/hooks/inventory/items/useDeleteItem';
@@ -33,6 +34,10 @@ const ItemsPage = () => {
     const [editUom, setEditUom] = useState('');
     const [editReorderLevel, setEditReorderLevel] = useState('');
     const [updateError, setUpdateError] = useState(null);
+    // View modal state
+    const [showViewModal, setShowViewModal] = useState(false);
+    const [viewItem, setViewItem] = useState(null);
+    const [viewParams, setViewParams] = useState(null);
 
     const normalizeList = (data) => {
         if (Array.isArray(data)) return data;
@@ -289,6 +294,22 @@ const ItemsPage = () => {
         setShowEditModal(true);
     };
 
+    const handleView = (item) => {
+        setViewItem(item);
+        const id = Number(getItemId(item));
+        setViewParams(id ? { itemId: id } : null);
+        setShowViewModal(true);
+    };
+
+    const handleCloseViewModal = () => {
+        setShowViewModal(false);
+        setViewItem(null);
+        setViewParams(null);
+    };
+
+    const workflowQuery = useWorkflowSummary(viewParams || {}, { enabled: !!viewParams?.itemId });
+    const workflowData = workflowQuery.data ? (Array.isArray(workflowQuery.data) ? workflowQuery.data[0] : workflowQuery.data) : null;
+
     const handleUpdateItem = (onSuccess) => {
         if (!editName.trim() || !editSku.trim() || !editCategoryId || !editDefaultStoreId || !editUom.trim()) {
             setUpdateError('Item Name, SKU, Category, Default Store and UOM are required.');
@@ -375,12 +396,13 @@ const ItemsPage = () => {
                 error={tableError}
                 items={normalizedItems}
                 columns={tableColumns}
-                showView={false}
+                showView={true}
                 showEdit={true}
                 showDelete={true}
                 showToggle={true}
                 searchQuery={searchTerm}
                 onSearchChange={setSearchTerm}
+                onView={handleView}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onToggle={handleToggle}
@@ -520,6 +542,210 @@ const ItemsPage = () => {
                     },
                 ]}
             />
+
+            {/* View Modal (read-only) */}
+            {showViewModal && viewItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '90vh' }}>
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+                            <div className="flex items-center gap-4">
+                                <h2 className="text-base font-semibold text-gray-900">View Item</h2>
+                                {workflowQuery?.isLoading && <Loader size={16} className="animate-spin text-gray-500" />}
+                            </div>
+                            <button onClick={handleCloseViewModal} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto px-6 py-6">
+                            {/* Basic item info */}
+                            <div className="mb-4 grid grid-cols-2 gap-6">
+                                <div>
+                                    <p className="text-xs text-gray-600">Item Name</p>
+                                    <p className="text-sm font-semibold text-gray-900">{viewItem.itemName || viewItem.name || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">SKU</p>
+                                    <p className="text-sm font-semibold text-gray-900">{viewItem.sku || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Category</p>
+                                    <p className="text-sm font-semibold text-gray-900">{getCategoryName(viewItem.categoryId)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Group</p>
+                                    <p className="text-sm font-semibold text-gray-900">{getGroupName(viewItem.groupId)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">UOM</p>
+                                    <p className="text-sm font-semibold text-gray-900">{viewItem.uom || viewItem.unitOfMeasurement || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Default Store</p>
+                                    <p className="text-sm font-semibold text-gray-900">{stores.find(s => String(s.id) === String(viewItem.defaultStoreId))?.name || 'N/A'}</p>
+                                </div>
+                            </div>
+
+                            {/* Workflow response */}
+                            {workflowQuery?.error && (
+                                <div className="p-3 mb-4 bg-red-50 text-red-700 rounded">{workflowQuery.error?.message || String(workflowQuery.error)}</div>
+                            )}
+
+                            {workflowQuery?.isLoading && (
+                                <div className="p-6 mb-4 flex flex-col items-center justify-center text-gray-600">
+                                    <Loader size={28} className="animate-spin mb-3 text-gray-500" />
+                                    <div className="text-sm">Loading workflow summary…</div>
+                                </div>
+                            )}
+
+                            {!workflowQuery?.isLoading && workflowData && (
+                                (() => {
+                                    const wf = workflowData;
+                                    if (!wf) return <div className="text-sm text-gray-600">No workflow data available.</div>;
+                                    const entries = wf.entries || {};
+                                    return (
+                                        <div className="space-y-6">
+                                            <div className="grid grid-cols-4 gap-4">
+                                                <div className="p-3 bg-gray-50 rounded">
+                                                    <p className="text-xs text-gray-500">Status</p>
+                                                    <p className="text-sm font-semibold text-gray-900">{wf.status || 'N/A'}</p>
+                                                </div>
+                                                <div className="p-3 bg-gray-50 rounded">
+                                                    <p className="text-xs text-gray-500">Purchase Requests</p>
+                                                    <p className="text-sm font-semibold text-gray-900">{(entries.purchaseRequests || []).length}</p>
+                                                </div>
+                                                <div className="p-3 bg-gray-50 rounded">
+                                                    <p className="text-xs text-gray-500">Purchase Orders</p>
+                                                    <p className="text-sm font-semibold text-gray-900">{(entries.purchaseOrders || []).length}</p>
+                                                </div>
+                                                <div className="p-3 bg-gray-50 rounded">
+                                                    <p className="text-xs text-gray-500">GRNs</p>
+                                                    <p className="text-sm font-semibold text-gray-900">{(entries.grns || []).length}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Detailed lists */}
+                                            {entries.purchaseRequests && entries.purchaseRequests.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Purchase Requests</h4>
+                                                    <div className="overflow-x-auto border rounded">
+                                                        <table className="w-full text-sm">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    <th className="px-3 py-2 text-left">PR No</th>
+                                                                    <th className="px-3 py-2 text-left">Qty</th>
+                                                                    <th className="px-3 py-2 text-left">Status</th>
+                                                                    <th className="px-3 py-2 text-left">Created At</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {entries.purchaseRequests.map((pr) => (
+                                                                    <tr key={pr.purchaseRequestLineId} className="border-t">
+                                                                        <td className="px-3 py-2">{pr.purchaseRequest?.requestNo || `PR-${pr.purchaseRequestId || pr.purchaseRequest?.purchaseRequestId || 'N/A'}`}</td>
+                                                                        <td className="px-3 py-2">{pr.qty}</td>
+                                                                        <td className="px-3 py-2">{pr.purchaseRequest?.status || 'N/A'}</td>
+                                                                        <td className="px-3 py-2">{pr.createdAt ? new Date(pr.createdAt).toLocaleString() : 'N/A'}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {entries.purchaseOrders && entries.purchaseOrders.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Purchase Orders</h4>
+                                                    <div className="overflow-x-auto border rounded">
+                                                        <table className="w-full text-sm">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    <th className="px-3 py-2 text-left">PO No</th>
+                                                                    <th className="px-3 py-2 text-left">Qty</th>
+                                                                    <th className="px-3 py-2 text-left">Status</th>
+                                                                    <th className="px-3 py-2 text-left">Created At</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {entries.purchaseOrders.map((po) => (
+                                                                    <tr key={po.purchaseOrderLineId} className="border-t">
+                                                                        <td className="px-3 py-2">{po.purchaseOrder?.poNo || `PO-${po.purchaseOrderId || 'N/A'}`}</td>
+                                                                        <td className="px-3 py-2">{po.qty}</td>
+                                                                        <td className="px-3 py-2">{po.purchaseOrder?.status || 'N/A'}</td>
+                                                                        <td className="px-3 py-2">{po.createdAt ? new Date(po.createdAt).toLocaleString() : 'N/A'}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {entries.grns && entries.grns.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-gray-700 mb-2">GRNs</h4>
+                                                    <div className="overflow-x-auto border rounded">
+                                                        <table className="w-full text-sm">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    <th className="px-3 py-2 text-left">GRN No</th>
+                                                                    <th className="px-3 py-2 text-left">Qty Received</th>
+                                                                    <th className="px-3 py-2 text-left">Status</th>
+                                                                    <th className="px-3 py-2 text-left">Created At</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {entries.grns.map((g) => (
+                                                                    <tr key={g.grnLineId} className="border-t">
+                                                                        <td className="px-3 py-2">{g.grn?.grnNo || `GRN-${g.grnId || 'N/A'}`}</td>
+                                                                        <td className="px-3 py-2">{g.qtyReceived ?? g.qty ?? 0}</td>
+                                                                        <td className="px-3 py-2">{g.grn?.status || 'N/A'}</td>
+                                                                        <td className="px-3 py-2">{g.createdAt ? new Date(g.createdAt).toLocaleString() : 'N/A'}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {entries.issuances && entries.issuances.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Issuances</h4>
+                                                    <div className="overflow-x-auto border rounded">
+                                                        <table className="w-full text-sm">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    <th className="px-3 py-2 text-left">Ref</th>
+                                                                    <th className="px-3 py-2 text-left">Qty</th>
+                                                                    <th className="px-3 py-2 text-left">Created At</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {entries.issuances.map((it, idx) => (
+                                                                    <tr key={idx} className="border-t">
+                                                                        <td className="px-3 py-2">{it.issuance?.issuanceNo || it.reference || 'N/A'}</td>
+                                                                        <td className="px-3 py-2">{it.qty ?? 0}</td>
+                                                                        <td className="px-3 py-2">{it.createdAt ? new Date(it.createdAt).toLocaleString() : 'N/A'}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
+                            <button onClick={handleCloseViewModal} className="w-40 py-3.5 border border-customBlue text-customBlue hover:bg-gray-50 rounded-lg text-sm font-medium transition cursor-pointer">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

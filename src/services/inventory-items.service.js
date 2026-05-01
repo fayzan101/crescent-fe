@@ -86,3 +86,19 @@ export const getOverviewItems = async () => {
     throw error;
   }
 };
+
+// Fetch workflow summary for items with optional filters
+export const getItemWorkflowSummary = async ({ itemId, status, from, to } = {}) => {
+  try {
+    const params = {};
+    if (itemId !== undefined && itemId !== null) params.itemId = itemId;
+    if (status) params.status = status;
+    if (from) params.from = from;
+    if (to) params.to = to;
+
+    const response = await userRequest.get('/api/v1/items/workflow-summary', { params });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};

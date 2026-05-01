@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Filter, Trash2, X, Minus, Loader, AlertCircle } from 'lucide-react';
 import DataTable from '@/components/components/DataTable';
 import { useGetAllGRNs } from '@/hooks/inventory/Grn/useGetAllGRNs';
@@ -15,6 +16,7 @@ import { useDropdownVendors } from '@/hooks/inventory/utility/useDropdownVendors
 import { normalizeApiList } from '@/lib/normalizeApiList';
 
 const ReceiveGRNPage = () => {
+  const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [previewApproving, setPreviewApproving] = useState(false);
@@ -250,7 +252,10 @@ const ReceiveGRNPage = () => {
 
     setDeleting(grnId);
     deleteGRN(grnId)
-      .then(() => toast.success(`Deleted ${grnNumber}`))
+      .then(() => {
+        toast.success(`Deleted ${grnNumber}`);
+        queryClient.invalidateQueries(['grns']);
+      })
       .catch(() => toast.error('Failed to delete GRN'))
       .finally(() => {
         setDeleteConfirm(null);
@@ -278,6 +283,7 @@ const ReceiveGRNPage = () => {
               }
             : prev
         );
+        queryClient.invalidateQueries(['grns']);
       })
       .catch(() => toast.error('Failed to approve GRN.'))
       .finally(() => setPreviewApproving(false));
@@ -468,6 +474,7 @@ const ReceiveGRNPage = () => {
       .then(() => {
         toast.success(editingGrnId ? 'GRN updated.' : 'GRN created.');
         handleCloseModal();
+        queryClient.invalidateQueries(['grns']);
       })
       .catch((error) => {
         const msg = error?.response?.data?.message;
