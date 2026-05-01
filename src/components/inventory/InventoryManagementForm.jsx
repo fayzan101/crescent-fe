@@ -16,8 +16,8 @@ const InventoryManagementForm = () => {
     { key: "overview", label: "Overview" },
     { key: "items", label: "Items" },
     { key: "setup", label: "Setup" },
-    { key: "purchase-order", label: "Purchase Order" },
     { key: "purchase-request", label: "Purchase Request" },
+    { key: "purchase-order", label: "Purchase Order" },
     { key: "receive-grn", label: "Receive GRN" },
     { key: "reports", label: "Reports" },
   ];

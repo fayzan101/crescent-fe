@@ -189,7 +189,7 @@ const  OverviewPage = () => {
             </div>
 
             {/* Sub Tabs */}
-            <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-gray-200">
+            {/* <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-gray-200">
                 {subTabs.map((tab) => (
                     <button
                         key={tab.id}
@@ -205,7 +205,7 @@ const  OverviewPage = () => {
                         {tab.label}
                     </button>
                 ))}
-            </div>
+            </div> */}
 
             {/* Form Section */}
             <div className="bg-gray-50 rounded-xl p-6 mb-6">

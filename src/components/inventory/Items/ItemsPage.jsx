@@ -362,7 +362,7 @@ const ItemsPage = () => {
                 <h1 className="text-3xl font-bold text-gray-900">Items</h1>
                 <button
                     onClick={handleAddItemClick}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-customBlue text-white font-semibold rounded-lg hover:bg-customBlue/90"
+                    className="cursor-pointer flex items-center gap-2 px-6 py-2.5 bg-customBlue text-white font-semibold rounded-lg hover:bg-customBlue/90"
                 >
                     <Plus size={18} />
                     Add New Item

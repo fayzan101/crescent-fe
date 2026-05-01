@@ -1,7 +1,8 @@
 'use client';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, Filter, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, X, Minus, Loader, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Filter, Trash2, X, Minus, Loader, AlertCircle } from 'lucide-react';
+import DataTable from '@/components/components/DataTable';
 import { useGetAllGRNs } from '@/hooks/inventory/Grn/useGetAllGRNs';
 import { useCreateGRN } from '@/hooks/inventory/Grn/useCreateGRN';
 import { useDeleteGRN } from '@/hooks/inventory/Grn/useDeleteGRN';
@@ -16,17 +17,12 @@ import { normalizeApiList } from '@/lib/normalizeApiList';
 const ReceiveGRNPage = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [deleting, setDeleting] = useState(null);
-  const [receiving, setReceiving] = useState(null);
   const [previewApproving, setPreviewApproving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [totalItems, setTotalItems] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
   const [selectedPO, setSelectedPO] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [grnItems, setGrnItems] = useState([]);
-  const [selectedRows, setSelectedRows] = useState(new Set());
   const [nextGrnNumber, setNextGrnNumber] = useState('GRN-2024-001');
   const [grnFormData, setGrnFormData] = useState({
     purchaseOrderId: '',
@@ -36,11 +32,6 @@ const ReceiveGRNPage = () => {
     itemId: '',
     quantityReceived: 1,
     conditionStatus: 'NEW'
-  });
-  const [inspectionData, setInspectionData] = useState({
-    quantityAccepted: 0,
-    quantityRejected: 0,
-    conditionStatus: 'GOOD'
   });
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, grnNumber } for delete confirmation modal
   const [previewGrn, setPreviewGrn] = useState(null); // GRN being previewed
@@ -160,22 +151,61 @@ const ReceiveGRNPage = () => {
     [storesRaw]
   );
 
-  useEffect(() => {
-    setTotalItems(grns.length);
-    setTotalPages(Math.ceil(grns.length / itemsPerPage));
-  }, [grns, itemsPerPage]);
-
-  const filteredGrns = (Array.isArray(grns) ? grns : []).filter(grn =>
-    grn.id?.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-    String(grn.purchaseOrderId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (grn.grnNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (grn.poNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (grn.prNo || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const grnTableData = useMemo(
+    () =>
+      grns.map((grn) => ({
+        ...grn,
+        name: [
+          grn.grnNo,
+          grn.poNo,
+          grn.prNo,
+          grn.storeName,
+          grn.grnType,
+          grn.receivedByUserId,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      })),
+    [grns]
   );
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const displayGrns = filteredGrns.slice(startIndex, startIndex + itemsPerPage);
-
+  const grnColumns = useMemo(
+    () => [
+      { key: 'grnNo', label: 'GRN No.', width: '12%' },
+      { key: 'poNo', label: 'PO No.', width: '12%' },
+      { key: 'prNo', label: 'PR No.', width: '12%' },
+      { key: 'storeName', label: 'Store', width: '18%' },
+      { key: 'grnType', label: 'GRN Type', width: '12%' },
+      {
+        key: 'receivedDate',
+        label: 'GRN Received On',
+        width: '14%',
+        render: (item) => (item.receivedDate ? new Date(item.receivedDate).toLocaleDateString() : 'N/A'),
+      },
+      { key: 'receivedByUserId', label: 'Received By', width: '12%' },
+      {
+        key: 'status',
+        label: 'Status',
+        width: '10%',
+        render: (item) => (
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-semibold inline-block ${
+              item.status === 'RECEIVED'
+                ? 'bg-green-100 text-green-700'
+                : item.status === 'INSPECTING'
+                ? 'bg-blue-100 text-blue-700'
+                : item.status === 'REJECTED'
+                ? 'bg-red-100 text-red-700'
+                : 'bg-yellow-100 text-yellow-700'
+            }`}
+          >
+            {item.status || 'PENDING'}
+          </span>
+        ),
+      },
+    ],
+    []
+  );
   const handlePreview = (grn) => {
     console.log('[ReceiveGRNPage.handlePreview] Previewing GRN:', grn);
     setPreviewGrn(grn);
@@ -230,14 +260,6 @@ const ReceiveGRNPage = () => {
 
   const cancelDelete = () => {
     setDeleteConfirm(null);
-  };
-
-  const handleReceiveGrn = (grnId) => {
-    setReceiving(grnId);
-    confirmGRN(grnId)
-      .then(() => toast.success('GRN confirmed successfully.'))
-      .catch(() => toast.error('Failed to confirm GRN.'))
-      .finally(() => setReceiving(null));
   };
 
   const handleApproveFromPreview = () => {
@@ -458,220 +480,55 @@ const ReceiveGRNPage = () => {
   return (
     <>
       <div className="bg-white p-6 min-h-screen scrollbar-hide">
-        {/* Header with Search, Add Button, Filter */}
         <div className="flex justify-between items-center mb-8 gap-4">
-          <div className="flex items-center bg-gray-100 rounded-lg w-64 px-4 py-3">
-            <Search size={18} className="text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search Here"
-              className="bg-transparent ml-3 w-full outline-none text-gray-600 placeholder-gray-400 text-sm"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Receive GRN</h1>
+            <p className="text-sm text-gray-500 mt-1">Manage received goods receipts using the shared table layout.</p>
           </div>
 
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={() => {
-                setNextGrnNumber(generateNextGrnNumber());
-                setShowAddModal(true);
-              }}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-5 rounded-lg flex items-center gap-2 transition text-sm">
+                  setNextGrnNumber(generateNextGrnNumber());
+                  setShowAddModal(true);
+                }}
+              className="cursor-pointer flex items-center gap-2 px-6 py-2.5 bg-customBlue text-white font-semibold rounded-lg hover:bg-customBlue/90"
+            >
               <Plus size={18} />
               Create New GRN
             </button>
-            <button className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition">
-              <Filter size={18} className="text-gray-600" />
-            </button>
           </div>
         </div>
-
-        {/* Alert Box - 7-Step Transaction Info */}
+{/* 
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex gap-3">
           <AlertCircle size={20} className="text-blue-600 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-blue-900">7-Step Atomic Transaction</p>
             <p className="text-xs text-blue-700 mt-1">Click "Receive" to start quality inspection. This will automatically: 1) Validate items, 2) Inspect quality, 3) Update PO, 4) Update inventory, 5) Record movements, 6) Update status, 7) Complete GRN.</p>
           </div>
-        </div>
+        </div> */}
 
-        {/* Table */}
-        <div className="overflow-x-auto border border-gray-200 rounded-lg">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="py-3 px-4 text-left">
-                  <input
-                    type="checkbox"
-                    checked={selectedRows.size === displayGrns.length && displayGrns.length > 0}
-                    onChange={toggleAllSelection}
-                    className="w-4 h-4 cursor-pointer"
-                  />
-                </th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">GRN No.</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">PO No.</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">PR No.</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">Store</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">GRN Type</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">GRN Received On</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">Received By</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">Status</th>
-                <th className="py-3 px-4 font-semibold text-gray-700 text-sm text-left">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="11" className="text-center py-8">
-                    <div className="flex items-center justify-center gap-2 text-gray-500">
-                      <Loader className="animate-spin" size={20} />
-                      Loading GRNs...
-                    </div>
-                  </td>
-                </tr>
-              ) : displayGrns.length === 0 ? (
-                <tr>
-                  <td colSpan="11" className="text-center py-8 text-gray-500">No GRNs found</td>
-                </tr>
-              ) : (
-                displayGrns.map((grn) => (
-                  <tr key={grn.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
-                    <td className="py-4 px-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.has(grn.id)}
-                        onChange={() => toggleRowSelection(grn.id)}
-                        className="w-4 h-4 cursor-pointer"
-                      />
-                    </td>
-                    <td className="py-4 px-4 font-semibold text-gray-900 text-sm">{grn.grnNo || `GRN-${grn.id}`}</td>
-                    <td className="py-4 px-4 text-gray-700 text-sm font-medium">{grn.poNo || `PO-${grn.purchaseOrderId || 'N/A'}`}</td>
-                    <td className="py-4 px-4 text-gray-700 text-sm">{grn.prNo || 'N/A'}</td>
-                    <td className="py-4 px-4 text-gray-700 text-sm">{grn.storeName || `Store #${grn.storeId || 'N/A'}`}</td>
-                    <td className="py-4 px-4 text-gray-700 text-sm">{grn.grnType || 'PURCHASE'}</td>
-                    <td className="py-4 px-4 text-gray-700 text-sm">{grn.receivedDate ? new Date(grn.receivedDate).toLocaleDateString() : 'N/A'}</td>
-                    <td className="py-4 px-4 text-gray-700 text-sm">{grn.receivedByUserId || 'N/A'}</td>
-                    <td className="py-4 px-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold inline-block ${
-                        grn.status === 'RECEIVED'
-                          ? 'bg-green-100 text-green-700'
-                          : grn.status === 'INSPECTING'
-                          ? 'bg-blue-100 text-blue-700'
-                          : grn.status === 'REJECTED'
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {grn.status || 'PENDING'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex gap-2 justify-center">
-                        <button
-                          onClick={() => handlePreview(grn)}
-                          className="w-8 h-8 rounded-md bg-yellow-400 flex items-center justify-center hover:bg-yellow-500 transition"
-                          title="Preview"
-                        >
-                          <Eye size={16} className="text-white" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(grn)}
-                          disabled={grn.status !== 'PENDING'}
-                          className="w-8 h-8 rounded-md bg-blue-500 flex items-center justify-center hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                          title="Edit (Only for PENDING)"
-                        >
-                          <Edit2 size={16} className="text-white" />
-                        </button>
-                        {/* Confirm to Receive button - only for PENDING status */}
-                        {grn.status === 'PENDING' && (
-                          <button
-                            onClick={() => handleReceiveGrn(grn.id, grn.items)}
-                            disabled={receiving === grn.id}
-                            className="w-8 h-8 rounded-md bg-green-500 flex items-center justify-center hover:bg-green-600 disabled:opacity-50 transition"
-                            title="Confirm to receive stock"
-                          >
-                            {receiving === grn.id ? <Loader size={16} className="text-white animate-spin" /> : <CheckCircle size={16} className="text-white" />}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDelete(grn.id, grn.grnNumber)}
-                          disabled={deleting === grn.id}
-                          className="w-8 h-8 rounded-md bg-red-500 flex items-center justify-center hover:bg-red-600 disabled:opacity-50 transition"
-                          title="Delete"
-                        >
-                          {deleting === grn.id ? <Loader size={16} className="text-white animate-spin" /> : <Trash2 size={16} className="text-white" />}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="flex justify-between items-center mt-6 gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-gray-600 text-sm font-medium">Showing:</label>
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="border border-gray-300 rounded px-3 py-2 text-gray-700 focus:outline-none focus:border-blue-500 text-sm"
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-            </select>
-          </div>
-
-          <div className="text-center flex-1">
-            <span className="text-gray-600 text-sm">
-              Showing {displayGrns.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + itemsPerPage, totalItems)} out of {totalItems} records
-            </span>
-          </div>
-
-          <div className="flex gap-1 items-center">
-            <button
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="p-2 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              <ChevronLeft size={16} />
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .slice(Math.max(0, currentPage - 2), Math.min(totalPages, currentPage + 2))
-              .map(page => (
-                <button
-                  key={page}
-                  onClick={() => handlePageChange(page)}
-                  className={`px-3 py-2 rounded transition text-sm ${
-                    currentPage === page
-                      ? 'bg-blue-500 text-white'
-                      : 'border border-gray-300 hover:bg-gray-100'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
-
-            <button
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="p-2 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
+        <div className="space-y-4">
+          <DataTable
+            isLoading={loading}
+            error={null}
+            items={grnTableData}
+            columns={grnColumns}
+            showView={true}
+            showEdit={true}
+            showDelete={true}
+            showToggle={false}
+            searchQuery={searchTerm}
+            onSearchChange={setSearchTerm}
+            onView={handlePreview}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            tabName="GRN"
+            itemsPerPage={itemsPerPage}
+          />
         </div>
       </div>
+
 
       {/* Create/Edit GRN Modal */}
       {showAddModal && (
@@ -682,7 +539,7 @@ const ReceiveGRNPage = () => {
               <h2 className="text-xl font-bold text-gray-800">{editingGrnId ? 'Edit GRN' : 'Create New GRN'}</h2>
               <button
                 onClick={handleCloseModal}
-                className="text-gray-500 hover:text-gray-700 transition"
+                className="cursor-pointer text-gray-500 hover:text-gray-700 transition"
               >
                 <X size={24} />
               </button>

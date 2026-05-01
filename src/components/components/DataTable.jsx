@@ -25,7 +25,10 @@ const DataTable = ({
   onSearchChange = () => {},
   tabName = "Item",
   itemsPerPage = 6,
+  showPageSizeSelector = true,
+  pageSizeOptions = [5, 10, 25, 50],
 }) => {
+  const [pageSize, setPageSize] = useState(itemsPerPage);
   const [toggleStates, setToggleStates] = useState(() =>
     Object.fromEntries(items.map((item, index) => [index, item?.isActive ?? true]))
   );
@@ -113,7 +116,7 @@ const DataTable = ({
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterActive, sortBy]);
+  }, [searchQuery, filterActive, sortBy, pageSize]);
 
   React.useEffect(() => {
     if (!showFilterPanel) return;
@@ -169,9 +172,9 @@ const DataTable = ({
     };
   }, [showFilterPanel]);
 
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
+  const totalPages = Math.ceil(filteredItems.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
   const paginatedItems = filteredItems.slice(startIndex, endIndex);
 
   const handleToggle = (item, index) => {
@@ -477,6 +480,23 @@ const DataTable = ({
             </div>
 
             <div className="flex items-center justify-end gap-2 mt-6 px-4">
+              {showPageSizeSelector && (
+                <div className="mr-auto flex items-center gap-2">
+                  <span className="text-sm text-gray-600 font-medium">Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="border border-gray-300 rounded px-3 py-2 text-gray-700 focus:outline-none focus:border-blue-500 text-sm bg-white"
+                  >
+                    {pageSizeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
@@ -494,7 +514,7 @@ const DataTable = ({
                     ) : (
                       <button
                         onClick={() => setCurrentPage(page)}
-                        className={`cursor-pointer px-3 py-2 min-w-[35px] rounded-lg font-medium text-sm transition ${
+                        className={`cursor-pointer px-3 py-2 min-w-8.75 rounded-lg font-medium text-sm transition ${
                           currentPage === page
                             ? "bg-blue-500 text-white"
                             : "border border-gray-300 text-gray-700 hover:bg-gray-50"
