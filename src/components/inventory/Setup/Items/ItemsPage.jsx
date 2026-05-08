@@ -3,11 +3,11 @@
 import React, { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Loader, X } from 'lucide-react';
-import DataTable from '../../components/DataTable';
-import FieldWrapper from '../../ui/FieldWrapper';
-import Input from '../../ui/Input';
-import Select from '../../ui/Select';
-import Textarea from '../../ui/TextArea';
+import DataTable from '../../../components/DataTable';
+import FieldWrapper from '../../../ui/FieldWrapper';
+import Input from '../../../ui/Input';
+import Select from '../../../ui/Select';
+import Textarea from '../../../ui/TextArea';
 import EditModal from '@/components/components/EditModal';
 import { useItems } from '@/hooks/inventory/items/useItems';
 import { useWorkflowSummary } from '@/hooks/inventory/items/useWorkflowSummary';
@@ -15,8 +15,26 @@ import { useCreateItem } from '@/hooks/inventory/items/useCreateItem';
 import { useUpdateItem } from '@/hooks/inventory/items/useUpdateItem';
 import { useDeleteItem } from '@/hooks/inventory/items/useDeleteItem';
 import { useCategories } from '@/hooks/inventory/setup/useCategories';
+import { useSubCategories } from '@/hooks/inventory/setup/useSubCategories';
 import { useGroups } from '@/hooks/inventory/setup/useGroups';
-import { useStores } from '@/hooks/inventory/setup/useStores';
+
+// Units object - easily extensible for future additions
+const UNITS = {
+    PCS: { value: 'PCS', label: 'Pieces' },
+    KG: { value: 'KG', label: 'Kilogram' },
+    G: { value: 'G', label: 'Gram' },
+    LTR: { value: 'LTR', label: 'Liter' },
+    ML: { value: 'ML', label: 'Milliliter' },
+    BOX: { value: 'BOX', label: 'Box' },
+    PKG: { value: 'PKG', label: 'Package' },
+    MTR: { value: 'MTR', label: 'Meter' },
+    SQM: { value: 'SQM', label: 'Square Meter' },
+    TON: { value: 'TON', label: 'Ton' },
+    DOZEN: { value: 'DOZEN', label: 'Dozen' },
+    EACH: { value: 'EACH', label: 'Each' },
+};
+
+const UNIT_OPTIONS = Object.values(UNITS).map(unit => ({ value: unit.value, label: unit.label }));
 
 const ItemsPage = () => {
     const queryClient = useQueryClient();
@@ -30,9 +48,10 @@ const ItemsPage = () => {
     const [editName, setEditName] = useState('');
     const [editSku, setEditSku] = useState('');
     const [editCategoryId, setEditCategoryId] = useState('');
+    const [editSubCategoryId, setEditSubCategoryId] = useState('');
     const [editGroupId, setEditGroupId] = useState('');
-    const [editDefaultStoreId, setEditDefaultStoreId] = useState('');
     const [editUom, setEditUom] = useState('');
+    const [editSsnSidn, setEditSsnSidn] = useState('');
     const [editReorderLevel, setEditReorderLevel] = useState('');
     const [editExpiryDate, setEditExpiryDate] = useState('');
     const [editAmount, setEditAmount] = useState('');
@@ -87,7 +106,6 @@ const ItemsPage = () => {
     const itemsQuery = useItems();
     const categoriesQuery = useCategories();
     const groupsQuery = useGroups();
-    const storesQuery = useStores();
 
     const { mutate: createItem, isPending: isCreating } = useCreateItem({
         onSuccess: async () => {
@@ -154,14 +172,7 @@ const ItemsPage = () => {
         })),
         [groupsQuery.data]
     );
-    const stores = useMemo(
-        () => normalizeList(storesQuery.data).map((store) => ({
-            ...store,
-            id: store.id ?? store.storeId ?? store._id ?? store.store_id,
-            name: store.storeName || store.name || store.title || '',
-        })),
-        [storesQuery.data]
-    );
+
 
     const categoryOptions = useMemo(
         () => categories
@@ -177,12 +188,7 @@ const ItemsPage = () => {
         [groups]
     );
 
-    const storeOptions = useMemo(
-        () => stores
-            .filter((store) => store.id !== undefined && store.id !== null && store.name)
-            .map((store) => ({ value: String(store.id), label: store.name })),
-        [stores]
-    );
+
 
     const normalizedItems = useMemo(
         () => items.map((item) => ({
@@ -191,26 +197,27 @@ const ItemsPage = () => {
             itemName: item.itemName || item.name || '',
             name: item.name || item.itemName || '',
             uom: item.uom || item.unitOfMeasurement || '',
+            ssnSidn: item.ssnSidn || '',
             categoryId: item.categoryId ?? item.category?.id ?? item.category?.categoryId ?? 0,
             groupId: item.groupId ?? item.group?.id ?? item.group?.groupId ?? 0,
             reorderLevel: item.reorderLevel ?? 0,
             isActive: item.isActive ?? true,
-            defaultStoreId: item.defaultStoreId ?? item.storeId ?? item.store?.id ?? item.store?.storeId ?? 0,
             expiryDate: item.expiryDate || item.expiry || '2026-12-31',
             totalAmount: item.totalAmount ?? item.total ?? '6500.00',
         })),
         [items]
     );
-    const loading = itemsQuery.isLoading || categoriesQuery.isLoading || groupsQuery.isLoading || storesQuery.isLoading;
+    const loading = itemsQuery.isLoading || categoriesQuery.isLoading || groupsQuery.isLoading;
     const tableError = itemsQuery.error?.message || null;
 
     const emptyForm = {
         itemName: '',
         sku: '',
         categoryId: '',
+        subCategoryId: '',
         groupId: '',
-        defaultStoreId: '',
         uom: '',
+        ssnSidn: '',
         reorderLevel: '',
         isActive: true,
         expiryDate: '',
@@ -222,8 +229,23 @@ const ItemsPage = () => {
 
     const [formData, setFormData] = useState(emptyForm);
 
+    // Subcategories for the add modal (depend on selected category)
+    const addSubcategoriesQuery = useSubCategories({ categoryId: formData.categoryId }, { enabled: !!formData.categoryId });
+    const addSubcategories = useMemo(() => normalizeList(addSubcategoriesQuery.data), [addSubcategoriesQuery.data]);
+    const addSubcategoryOptions = useMemo(
+        () => addSubcategories.map((s) => ({ value: String(s.id ?? s.subCategoryId ?? s._id), label: s.subCategoryName || s.name || '' })),
+        [addSubcategories]
+    );
+
+    // Subcategories for the edit modal (depend on selected editCategoryId)
+    const editSubcategoriesQuery = useSubCategories({ categoryId: editCategoryId }, { enabled: !!editCategoryId });
+    const editSubcategories = useMemo(() => normalizeList(editSubcategoriesQuery.data), [editSubcategoriesQuery.data]);
+    const editSubcategoryOptions = useMemo(
+        () => editSubcategories.map((s) => ({ value: String(s.id ?? s.subCategoryId ?? s._id), label: s.subCategoryName || s.name || '' })),
+        [editSubcategories]
+    );
+
     const normalizeSkuInput = (value) => value.toUpperCase().replace(/[^A-Z0-9-_]/g, '').slice(0, 30);
-    const normalizeUomInput = (value) => value.toUpperCase().replace(/[^A-Z0-9/_-]/g, '').slice(0, 10);
     const normalizeNameInput = (value) => value.replace(/\s+/g, ' ').trim();
     const normalizeAmountInput = (value) => {
         const sanitized = value.replace(/[^0-9.]/g, '');
@@ -249,9 +271,10 @@ const ItemsPage = () => {
         sku: data.sku,
         itemName: data.itemName,
         categoryId: Number(data.categoryId || 0),
+        subCategoryId: Number(data.subCategoryId || 0),
         groupId: Number(data.groupId || 0),
-        defaultStoreId: Number(data.defaultStoreId || 0),
         uom: data.uom,
+        ssnSidn: data.ssnSidn || '',
         reorderLevel: data.reorderLevel === '' ? 0 : Math.max(0, Number(data.reorderLevel) || 0),
         isActive: data.isActive ?? true,
     });
@@ -267,9 +290,10 @@ const ItemsPage = () => {
             key: 'groupId', label: 'Group', width: '12%',
             render: (item) => getGroupName(item.groupId)
         },
-        { key: 'uom', label: 'UOM', width: '10%' },
-        { key: 'reorderLevel', label: 'Reorder Level', width: '10%' },
-        { key: 'expiryDate', label: 'Expiry Date', width: '12%' },
+        { key: 'uom', label: 'UOM', width: '8%' },
+        { key: 'ssnSidn', label: 'SSN/SIDN', width: '12%' },
+        { key: 'reorderLevel', label: 'Reorder Level', width: '8%' },
+        { key: 'expiryDate', label: 'Expiry Date', width: '10%' },
         {
             key: 'totalAmount',
             label: 'Total Amount',
@@ -323,19 +347,13 @@ const ItemsPage = () => {
             setFormData(prev => ({ ...prev, [name]: normalizeSkuInput(value) }));
             return;
         }
-        if (name === 'uom') {
-            setFormData(prev => ({ ...prev, [name]: normalizeUomInput(value) }));
-            return;
-        }
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSubmitForm = async () => {
         const normalizedName = normalizeNameInput(formData.itemName);
         const normalizedSku = normalizeSkuInput(formData.sku);
-        const normalizedUom = normalizeUomInput(formData.uom);
         const skuPattern = /^[A-Z0-9][A-Z0-9-_]{2,29}$/;
-        const uomPattern = /^[A-Z0-9][A-Z0-9/_-]{0,9}$/;
 
         if (!normalizedName) {
             setSubmitError('Item name is required.');
@@ -349,16 +367,8 @@ const ItemsPage = () => {
             setSubmitError('Category is required.');
             return;
         }
-        if (!formData.defaultStoreId) {
-            setSubmitError('Default store is required.');
-            return;
-        }
-        if (!normalizedUom) {
+        if (!formData.uom) {
             setSubmitError('UOM is required.');
-            return;
-        }
-        if (!uomPattern.test(normalizedUom)) {
-            setSubmitError('UOM must be 1-10 characters using letters, numbers, or /-_.');
             return;
         }
         setSubmitError(null);
@@ -367,7 +377,6 @@ const ItemsPage = () => {
                 ...formData,
                 itemName: normalizedName,
                 sku: normalizedSku,
-                uom: normalizedUom,
             }),
             {
             onSuccess: () => {
@@ -382,9 +391,10 @@ const ItemsPage = () => {
         setEditName(item.itemName || item.name || '');
         setEditSku(item.sku || '');
         setEditCategoryId(String(item.categoryId ?? ''));
+        setEditSubCategoryId(String(item.subCategoryId ?? item.subCategory?.id ?? ''));
         setEditGroupId(String(item.groupId ?? ''));
-        setEditDefaultStoreId(String(item.defaultStoreId ?? ''));
         setEditUom(item.uom || item.unitOfMeasurement || '');
+        setEditSsnSidn(item.ssnSidn || '');
         setEditReorderLevel(String(item.reorderLevel ?? ''));
         setEditExpiryDate(item.expiryDate || '');
         const nextEditAmount = item.amount !== undefined && item.amount !== null ? String(item.amount) : '';
@@ -415,8 +425,8 @@ const ItemsPage = () => {
     const workflowData = workflowQuery.data ? (Array.isArray(workflowQuery.data) ? workflowQuery.data[0] : workflowQuery.data) : null;
 
     const handleUpdateItem = (onSuccess) => {
-        if (!editName.trim() || !editSku.trim() || !editCategoryId || !editDefaultStoreId || !editUom.trim()) {
-            setUpdateError('Item Name, SKU, Category, Default Store and UOM are required.');
+        if (!editName.trim() || !editSku.trim() || !editCategoryId || !editUom.trim()) {
+            setUpdateError('Item Name, SKU, Category and UOM are required.');
             return;
         }
         setUpdateError(null);
@@ -427,9 +437,10 @@ const ItemsPage = () => {
                     itemName: editName,
                     sku: editSku,
                     categoryId: editCategoryId,
+                    subCategoryId: editSubCategoryId,
                     groupId: editGroupId,
-                    defaultStoreId: editDefaultStoreId,
                     uom: editUom,
+                    ssnSidn: editSsnSidn,
                     reorderLevel: editReorderLevel,
                     isActive: selectedItem.isActive ?? true,
                 }),
@@ -450,9 +461,10 @@ const ItemsPage = () => {
         setEditName('');
         setEditSku('');
         setEditCategoryId('');
+        setEditSubCategoryId('');
         setEditGroupId('');
-        setEditDefaultStoreId('');
         setEditUom('');
+        setEditSsnSidn('');
         setEditReorderLevel('');
         setEditExpiryDate('');
         setEditAmount('');
@@ -477,8 +489,8 @@ const ItemsPage = () => {
                 sku: targetItem.sku,
                 categoryId: targetItem.categoryId,
                 groupId: targetItem.groupId,
-                defaultStoreId: targetItem.defaultStoreId,
                 uom: targetItem.uom,
+                ssnSidn: targetItem.ssnSidn,
                 reorderLevel: targetItem.reorderLevel,
                 isActive: typeof nextValue === 'boolean' ? nextValue : !targetItem.isActive,
             }),
@@ -521,7 +533,7 @@ const ItemsPage = () => {
             {/* ── Add New Item Modal ── */}
             {showAddModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '90vh' }}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl flex flex-col" style={{ maxHeight: '90vh' }}>
 
                         {/* Sticky Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
@@ -533,68 +545,81 @@ const ItemsPage = () => {
 
                         {/* Scrollable Body */}
                         <div className="flex-1 overflow-y-auto px-6 py-6">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                    <FieldWrapper label="Item Name" className="text-xs" required={true}>
-                                        <Input name="itemName" value={formData.itemName} onChange={handleFormChange} placeholder="Enter item name" className="text-sm" />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="SKU" className="text-xs" required={true}>
-                                        <Input name="sku" value={formData.sku} onChange={handleFormChange} placeholder="Enter SKU" className="text-sm" />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Category" className="text-xs" required={true}>
-                                        <Select
-                                            name="categoryId"
-                                            value={formData.categoryId}
-                                            onChange={handleFormChange}
-                                            options={categoryOptions}
-                                            placeholder="Select category"
-                                            className="text-sm"
-                                        />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Item Group" className="text-xs" required={true}>
-                                        <Select
-                                            name="groupId"
-                                            value={formData.groupId}
-                                            onChange={handleFormChange}
-                                            options={groupOptions}
-                                            placeholder="Select group"
-                                            className="text-sm"
-                                        />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="UOM" className="text-xs" required={true}>
-                                        <Input name="uom" value={formData.uom} onChange={handleFormChange} placeholder="e.g. pcs, kg, box" className="text-sm" />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Total Amount" className="text-xs">
-                                        <Input type="text" name="totalAmount" value={formData.totalAmount} onChange={handleFormChange} placeholder="0.00" className="text-sm" readOnly={true} />
-                                    </FieldWrapper>
-                                </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Row 1: Item Name, Item Expiry, UOM */}
+                                <FieldWrapper label="Item Name" className="text-xs" required={true}>
+                                    <Input name="itemName" value={formData.itemName} onChange={handleFormChange} placeholder="Enter item name" className="text-sm" />
+                                </FieldWrapper>
+                                <FieldWrapper label="Item Expiry" className="text-xs" required={true}>
+                                    <Input type="date" name="expiryDate" value={formData.expiryDate} onChange={handleFormChange} className="text-sm" />
+                                </FieldWrapper>
+                                <FieldWrapper label="UOM" className="text-xs" required={true}>
+                                    <Select
+                                        name="uom"
+                                        value={formData.uom}
+                                        onChange={handleFormChange}
+                                        options={UNIT_OPTIONS}
+                                        placeholder="Select unit"
+                                        className="text-sm"
+                                    />
+                                </FieldWrapper>
 
-                                <div className="space-y-4">
-                                    <FieldWrapper label="Default Store" className="text-xs" required={true}>
-                                        <Select
-                                            name="defaultStoreId"
-                                            value={formData.defaultStoreId}
-                                            onChange={handleFormChange}
-                                            options={storeOptions}
-                                            placeholder="Select store"
-                                            className="text-sm"
-                                        />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Reorder Level" className="text-xs" required={true}>
-                                        <Input type="number" min="0" name="reorderLevel" value={formData.reorderLevel} onChange={handleFormChange} placeholder="0" className="text-sm" />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Item Expiry" className="text-xs" required={true}>
-                                        <Input type="date" name="expiryDate" value={formData.expiryDate} onChange={handleFormChange} className="text-sm" />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Amount" className="text-xs" required={true}>
-                                        <Input type="text" name="amount" value={formData.amount} onChange={handleFormChange} placeholder="0.00" className="text-sm" />
-                                    </FieldWrapper>
-                                    <FieldWrapper label="Tax Amount" className="text-xs" required={true}>
-                                        <Input type="text" name="taxAmount" value={formData.taxAmount} onChange={handleFormChange} placeholder="0.00" className="text-sm" />
-                                    </FieldWrapper>
-                                </div>
+                                {/* Row 2: SKU / IMEI, SSN/SIDN, Reorder Level */}
+                                <FieldWrapper label="SKU / IMEI" className="text-xs" required={true}>
+                                    <Input name="sku" value={formData.sku} onChange={handleFormChange} placeholder="Enter SKU / IMEI" className="text-sm" />
+                                </FieldWrapper>
+                                <FieldWrapper label="SSN/SIDN" className="text-xs">
+                                    <Input name="ssnSidn" value={formData.ssnSidn} onChange={handleFormChange} placeholder="Enter SSN/SIDN" className="text-sm" />
+                                </FieldWrapper>
+                                <FieldWrapper label="Reorder Level" className="text-xs" required={true}>
+                                    <Input type="number" min="0" name="reorderLevel" value={formData.reorderLevel} onChange={handleFormChange} placeholder="0" className="text-sm" />
+                                </FieldWrapper>
 
-                                <div className="lg:col-span-2">
+                                {/* Row 3: Category, Subcategory, Group */}
+                                <FieldWrapper label="Category" className="text-xs" required={true}>
+                                    <Select
+                                        name="categoryId"
+                                        value={formData.categoryId}
+                                        onChange={handleFormChange}
+                                        options={categoryOptions}
+                                        placeholder="Select category"
+                                        className="text-sm"
+                                    />
+                                </FieldWrapper>
+                                <FieldWrapper label="Subcategory" className="text-xs">
+                                    <Select
+                                        name="subCategoryId"
+                                        value={formData.subCategoryId}
+                                        onChange={handleFormChange}
+                                        options={addSubcategoryOptions}
+                                        placeholder="Select subcategory"
+                                        className="text-sm"
+                                    />
+                                </FieldWrapper>
+                                <FieldWrapper label="Item Group" className="text-xs" required={true}>
+                                    <Select
+                                        name="groupId"
+                                        value={formData.groupId}
+                                        onChange={handleFormChange}
+                                        options={groupOptions}
+                                        placeholder="Select group"
+                                        className="text-sm"
+                                    />
+                                </FieldWrapper>
+
+                                {/* Row 4: Amount, Tax Amount, Total Amount */}
+                                <FieldWrapper label="Amount" className="text-xs" required={true}>
+                                    <Input type="text" name="amount" value={formData.amount} onChange={handleFormChange} placeholder="0.00" className="text-sm" />
+                                </FieldWrapper>
+                                <FieldWrapper label="Tax Amount" className="text-xs" required={true}>
+                                    <Input type="text" name="taxAmount" value={formData.taxAmount} onChange={handleFormChange} placeholder="0.00" className="text-sm" />
+                                </FieldWrapper>
+                                <FieldWrapper label="Total Amount" className="text-xs">
+                                    <Input type="text" name="totalAmount" value={formData.totalAmount} onChange={handleFormChange} placeholder="0.00" className="text-sm" readOnly={true} />
+                                </FieldWrapper>
+
+                                {/* Description - Full Width */}
+                                <div className="lg:col-span-3">
                                     <FieldWrapper label="Description" className="text-xs">
                                         <Textarea
                                             name="description"
@@ -654,6 +679,13 @@ const ItemsPage = () => {
                         options: categoryOptions,
                     },
                     {
+                        label: "Subcategory",
+                        value: editSubCategoryId,
+                        onChange: setEditSubCategoryId,
+                        type: "select",
+                        options: editSubcategoryOptions,
+                    },
+                    {
                         label: "Item Group",
                         value: editGroupId,
                         onChange: setEditGroupId,
@@ -661,13 +693,13 @@ const ItemsPage = () => {
                         options: groupOptions,
                     },
                     {
-                        label: "Default Store",
-                        value: editDefaultStoreId,
-                        onChange: setEditDefaultStoreId,
+                        label: "UOM",
+                        value: editUom,
+                        onChange: setEditUom,
                         type: "select",
-                        options: storeOptions,
+                        options: UNIT_OPTIONS,
                     },
-                    { label: "UOM",           value: editUom,          onChange: setEditUom          },
+                    { label: "SSN/SIDN",      value: editSsnSidn,      onChange: setEditSsnSidn      },
                     {
                         label: "Reorder Level",
                         value: editReorderLevel,
@@ -730,7 +762,7 @@ const ItemsPage = () => {
 
                         <div className="flex-1 overflow-y-auto px-6 py-6">
                             {/* Basic item info */}
-                            <div className="mb-4 grid grid-cols-2 gap-6">
+                            <div className="mb-4 grid grid-cols-3 gap-6">
                                 <div>
                                     <p className="text-xs text-gray-600">Item Name</p>
                                     <p className="text-sm font-semibold text-gray-900">{viewItem.itemName || viewItem.name || 'N/A'}</p>
@@ -750,10 +782,6 @@ const ItemsPage = () => {
                                 <div>
                                     <p className="text-xs text-gray-600">UOM</p>
                                     <p className="text-sm font-semibold text-gray-900">{viewItem.uom || viewItem.unitOfMeasurement || 'N/A'}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-600">Default Store</p>
-                                    <p className="text-sm font-semibold text-gray-900">{stores.find(s => String(s.id) === String(viewItem.defaultStoreId))?.name || 'N/A'}</p>
                                 </div>
                             </div>
 

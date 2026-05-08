@@ -6,6 +6,7 @@ import { Loader } from 'lucide-react';
 import DataTable from '../../../components/DataTable';
 import FieldWrapper from '../../../ui/FieldWrapper';
 import Input from '../../../ui/Input';
+import Select from '../../../ui/Select';
 import EditModal from '@/components/components/EditModal';
 import { useCategories } from '@/hooks/inventory/setup/useCategories';
 import { useCreateCategory } from '@/hooks/inventory/setup/useCreateCategory';

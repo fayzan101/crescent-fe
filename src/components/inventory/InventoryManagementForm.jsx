@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import OverviewPage from './Overview/OverviewPage';
-import ItemsPage from './Items/ItemsPage';
 import SetupLayoutPage from './Setup/SetupLayoutPage';
 import PurchaseOrderPage from './PurchaseOrder/PurchaseOrderPage';
 import PurchaseRequestPage from './PurchaseRequest/PurchaseRequestPage';
@@ -14,7 +13,6 @@ const InventoryManagementForm = () => {
 
   const tabs = [
     { key: "overview", label: "Overview" },
-    { key: "items", label: "Items" },
     { key: "setup", label: "Setup" },
     { key: "purchase-request", label: "Purchase Request" },
     { key: "purchase-order", label: "Purchase Order" },
@@ -47,7 +45,6 @@ const InventoryManagementForm = () => {
       {/* Right content area */}
       <div className="flex-1 min-w-0">
         {activeTab === "overview" && <OverviewPage />}
-        {activeTab === "items" && <ItemsPage />}
         {activeTab === "setup" && <SetupLayoutPage />}
         {activeTab === "purchase-order" && <PurchaseOrderPage />}
         {activeTab === "purchase-request" && <PurchaseRequestPage />}

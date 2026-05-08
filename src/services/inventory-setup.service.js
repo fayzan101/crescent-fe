@@ -76,6 +76,61 @@ export const createInventoryCategory = async (data) => {
   }
 };
 
+// Fetch inventory subcategories (optionally by categoryId via params)
+export const getInventorySubcategories = async (params) => {
+  try {
+    const response = await userRequest.get('/api/v1/subcategories', { params });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Create a new inventory subcategory
+export const createInventorySubcategory = async (data) => {
+  if (!data) throw new Error('Subcategory data is required');
+  try {
+    const response = await userRequest.post('/api/v1/subcategories', data);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Fetch a single inventory subcategory by ID
+export const getInventorySubcategoryById = async (id) => {
+  if (!id) throw new Error('Subcategory ID is required');
+  try {
+    const response = await userRequest.get(`/api/v1/subcategories/${id}`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Update an inventory subcategory by ID
+export const updateInventorySubcategory = async (id, data) => {
+  if (!id) throw new Error('Subcategory ID is required');
+  if (!data) throw new Error('Update data is required');
+  try {
+    const response = await userRequest.put(`/api/v1/subcategories/${id}`, data);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Delete an inventory subcategory by ID
+export const deleteInventorySubcategory = async (id) => {
+  if (!id) throw new Error('Subcategory ID is required');
+  try {
+    const response = await userRequest.delete(`/api/v1/subcategories/${id}`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Fetch a single inventory group by ID
 export const getInventoryGroupById = async (id) => {
   if (!id) throw new Error("Group ID is required");

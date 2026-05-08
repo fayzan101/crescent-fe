@@ -34,7 +34,7 @@ const EditModal = ({
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-        <div className="bg-white rounded-xl shadow-2xl p-8 w-full md:w-2/3 lg:w-1/2 mx-4 flex flex-col justify-between max-h-[80vh] overflow-y-auto">
+        <div className="bg-white rounded-xl shadow-2xl p-8 w-full md:w-3/4 lg:w-2/3 mx-4 flex flex-col justify-between max-h-[80vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
             <h3 className="text-xl font-bold text-gray-900">{title}</h3>
             <button
@@ -52,7 +52,7 @@ const EditModal = ({
             </div>
           )}
 
-          <div className="space-y-5 flex-1">
+          <div className="grid grid-cols-3 gap-6 flex-1">
             {/* Render fields from array */}
             {fields && fields.length > 0 ? (
               fields.map((field, index) => (

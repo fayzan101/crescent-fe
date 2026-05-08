@@ -4,16 +4,20 @@ import React, { useState } from 'react';
 import SetupSidebar from './SetupSidebar';
 import AddStorePage from './AddStore/AddStorePage';
 import AddCategoryPage from './AddCategory/AddCategoryPage';
+import AddSubCategoryPage from './AddSubCategory/AddSubCategoryPage';
 import AddGroupSectionPage from './AddGroupSection/AddGroupSectionPage';
 import AddVendorPage from './AddVendor/AddVendorPage';
+import ItemsPage from './Items/ItemsPage';
 
 const SetupLayoutPage = () => {
-    const [currentStep, setCurrentStep] = useState('add-store');
+    const [currentStep, setCurrentStep] = useState('items');
     const [completedSteps, setCompletedSteps] = useState([]);
 
     const steps = [
+        { id: 'items', component: ItemsPage, label: 'Items' },
         { id: 'add-store', component: AddStorePage, label: 'Add Store' },
         { id: 'add-category', component: AddCategoryPage, label: 'Add Category' },
+        { id: 'add-subcategory', component: AddSubCategoryPage, label: 'Add Subcategory' },
         { id: 'add-group-section', component: AddGroupSectionPage, label: 'Add Group/Section' },
         { id: 'add-vendor', component: AddVendorPage, label: 'Add Vendor/Supplier' }
     ];

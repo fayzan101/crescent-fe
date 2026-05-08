@@ -6,7 +6,9 @@ const SetupSidebar = ({ currentStep, onStepChange, completedSteps }) => {
     const steps = [
         { id: 'add-store', label: 'Add Store', description: 'Create storage locations' },
         { id: 'add-category', label: 'Add Category', description: 'Define item categories' },
+        { id: 'add-subcategory', label: 'Add Subcategory', description: 'Define subcategories' },
         { id: 'add-group-section', label: 'Add Group/Section', description: 'Organize items into groups' },
+        { id: 'items', label: 'Items', description: 'Manage inventory items' },
         { id: 'add-vendor', label: 'Add Vendor/Supplier', description: 'Manage supplier information' }
     ];
 

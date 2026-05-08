@@ -52,7 +52,6 @@ const PurchaseRequestPage = () => {
     itemName: '',
     unitOfMeasurement: '',
     quantity: 1,
-    note: '',
     remarks: '',
   });
 
@@ -214,7 +213,6 @@ const PurchaseRequestPage = () => {
       itemName: '',
       unitOfMeasurement: '',
       quantity: 1,
-      note: '',
       remarks: '',
     });
     setIsEditingRequest(false);
@@ -257,7 +255,6 @@ const PurchaseRequestPage = () => {
       unitOfMeasurement: purchaseFormData.unitOfMeasurement || selectedItem.unitOfMeasurement,
       quantity: purchaseFormData.quantity,
       unitPrice: selectedItem.price || 0,
-      note: purchaseFormData.note,
     }]);
 
     setPurchaseFormData((prev) => ({
@@ -267,7 +264,6 @@ const PurchaseRequestPage = () => {
       itemName: '',
       unitOfMeasurement: '',
       quantity: 1,
-      note: '',
     }));
   };
 
@@ -289,7 +285,6 @@ const PurchaseRequestPage = () => {
       lines: purchaseRequestItems.map((row) => ({
         itemId: toNumericId(row.itemId),
         qty: Math.max(1, parseInt(row.quantity, 10) || 1),
-        note: row.note || '',
       })),
     };
   };
@@ -395,7 +390,6 @@ const PurchaseRequestPage = () => {
         itemName: line.itemName || line.name || itemMeta?.name || `Item #${lineItemId}`,
         unitOfMeasurement: resolveItemUnitOfMeasurement(line) || itemMeta?.unitOfMeasurement || '',
         quantity: Number(line.quantity ?? line.qty ?? line.quantityOrdered ?? 0),
-        note: line.note || '',
       };
     });
 
@@ -410,7 +404,6 @@ const PurchaseRequestPage = () => {
       itemName: '',
       unitOfMeasurement: '',
       quantity: 1,
-      note: '',
       remarks: item.remarks || '',
     });
     setShowAddModal(true);
@@ -486,7 +479,7 @@ const PurchaseRequestPage = () => {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl flex flex-col" style={{ maxHeight: '90vh' }}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl flex flex-col " style={{ maxHeight: '95vh' }}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <h2 className="text-lg font-semibold text-gray-900">
                 {isEditingRequest ? 'Edit Purchase Request' : 'Add New Purchase Request'}
@@ -531,7 +524,7 @@ const PurchaseRequestPage = () => {
 
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-4">Add Items</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1  md:grid-cols-4 gap-4">
                   <FieldWrapper label="Item SKU / Name" required className="text-sm">
                     <Select
                       placeholder="Select Item"
@@ -557,9 +550,7 @@ const PurchaseRequestPage = () => {
                   <FieldWrapper label="Unit of Measurement" required className="text-sm">
                     <Input value={purchaseFormData.unitOfMeasurement ?? ''} disabled className="text-sm py-2 bg-gray-50" />
                   </FieldWrapper>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  
                   <FieldWrapper label="Quantity" required className="text-sm">
                     <div className="flex items-center gap-2">
                       <button onClick={() => handleQuantityChange(purchaseFormData.quantity - 1)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold cursor-pointer">−</button>
@@ -573,24 +564,13 @@ const PurchaseRequestPage = () => {
                     </div>
                   </FieldWrapper>
 
-                  <FieldWrapper label="Note" className="text-sm">
-                    <Input
-                      value={purchaseFormData.note}
-                      onChange={(e) => setPurchaseFormData((prev) => ({ ...prev, note: e.target.value }))}
-                      placeholder="Add note for this item"
-                      className="text-sm py-2"
-                    />
-                  </FieldWrapper>
-
-                  <div className="flex items-end">
-                    <button
+                  <button
                       onClick={handleAddItem}
                       className="w-full px-4 py-2 bg-customBlue text-white rounded-lg text-sm font-medium hover:bg-customBlue/90 transition cursor-pointer flex items-center justify-center gap-2 h-full"
                     >
                       <Plus size={16} />
                       Add Item
                     </button>
-                  </div>
                 </div>
               </div>
 
@@ -600,7 +580,7 @@ const PurchaseRequestPage = () => {
                     value={purchaseFormData.remarks}
                     onChange={(e) => setPurchaseFormData((prev) => ({ ...prev, remarks: e.target.value }))}
                     placeholder="Add remarks for this purchase request"
-                    className="text-sm p-2 border border-gray-300 rounded-lg w-full min-h-24 mt-2 mb-4 resize-none"
+                    className="text-sm w-full min-h-10 mt-2 mb-4 outline-none"
                   />
                 </FieldWrapper>
               </div>
@@ -617,7 +597,6 @@ const PurchaseRequestPage = () => {
                           <th className="text-left px-4 py-3 font-semibold text-gray-700">Item Name</th>
                           <th className="text-left px-4 py-3 font-semibold text-gray-700">Unit</th>
                           <th className="text-left px-4 py-3 font-semibold text-gray-700">Quantity</th>
-                          <th className="text-left px-4 py-3 font-semibold text-gray-700">Note</th>
                           <th className="text-center px-4 py-3 font-semibold text-gray-700">Action</th>
                         </tr>
                       </thead>
@@ -629,7 +608,6 @@ const PurchaseRequestPage = () => {
                             <td className="px-4 py-3 text-gray-700">{item.itemName}</td>
                             <td className="px-4 py-3 text-gray-700">{item.unitOfMeasurement}</td>
                             <td className="px-4 py-3 text-gray-700">{item.quantity}</td>
-                            <td className="px-4 py-3 text-gray-700">{item.note || '-'}</td>
                             <td className="px-4 py-3 text-center">
                               <button
                                 onClick={() => handleRemoveItem(item.id)}
