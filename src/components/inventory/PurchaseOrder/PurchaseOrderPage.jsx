@@ -13,8 +13,8 @@ import { useDropdownVendors } from '@/hooks/inventory/utility/useDropdownVendors
 import { usePurchaseOrders } from '@/hooks/inventory/purchase orders/usePurchaseOrders';
 import { useCreatePurchaseOrder } from '@/hooks/inventory/purchase orders/useCreatePurchaseOrder';
 import { useDeletePurchaseOrder } from '@/hooks/inventory/purchase orders/useDeletePurchaseOrder';
-import { useApprovePurchaseOrder } from '@/hooks/inventory/purchase orders/useApprovePurchaseOrder';
-import { useRejectPurchaseOrder } from '@/hooks/inventory/purchase orders/useRejectPurchaseOrder';
+import { useApprovePurchaseRequest } from '@/hooks/inventory/purchase request/useApprovePurchaseRequest';
+import { useRejectPurchaseRequest } from '@/hooks/inventory/purchase request/useRejectPurchaseRequest';
 import { usePurchaseRequests } from '@/hooks/inventory/purchase request/usePurchaseRequests';
 import {
     resolveItemRecordId,
@@ -37,8 +37,8 @@ const PurchaseOrderPage = () => {
     const [previewPO, setPreviewPO] = useState(null);
     const [deleteModal, setDeleteModal] = useState({ isOpen: false, poId: null });
     const [submitError, setSubmitError] = useState('');
-    const [poActionPendingId, setPoActionPendingId] = useState(null);
-    const [poRejectReason, setPoRejectReason] = useState('');
+    const [purchaseRequestActionPendingId, setPurchaseRequestActionPendingId] = useState(null);
+    const [purchaseRequestRejectReason, setPurchaseRequestRejectReason] = useState('');
 
     const [formData, setFormData] = useState({
         officeId: '',
@@ -154,9 +154,11 @@ const PurchaseOrderPage = () => {
         return normalizeList(purchaseRequestsQuery.data).map((request) => {
             const id = request.id ?? request.requestId ?? request.purchaseRequestId ?? request._id;
             const lines = purchaseRequestLineList(request);
+            const status = String(request.status || request.approvalStatus || 'DRAFT').toUpperCase();
             return {
                 ...request,
                 id,
+                status,
                 requestNo:
                     request.purchaseRequestNo ||
                     request.requestNo ||
@@ -175,13 +177,22 @@ const PurchaseOrderPage = () => {
     const purchaseRequestOptions = useMemo(
         () =>
             normalizedPurchaseRequests
-                .filter((request) => request.id)
+                .filter((request) => request.id && !['APPROVED', 'REJECTED'].includes(request.status))
                 .map((request) => ({
                     value: String(request.id),
                     label: String(request.requestNo || `PR-${request.id}`),
                 })),
         [normalizedPurchaseRequests]
     );
+
+    const selectedPurchaseRequest = useMemo(
+        () => normalizedPurchaseRequests.find((request) => String(request.id) === String(formData.purchaseRequestId || '')) || null,
+        [normalizedPurchaseRequests, formData.purchaseRequestId]
+    );
+
+    const isSelectedPurchaseRequestActionPending =
+        purchaseRequestActionPendingId != null && String(purchaseRequestActionPendingId) === String(selectedPurchaseRequest?.id);
+    const canActOnSelectedPurchaseRequest = Boolean(selectedPurchaseRequest && !['APPROVED', 'REJECTED'].includes(selectedPurchaseRequest.status));
 
     const resetForm = () => ({
         purchaseRequestId: '',
@@ -213,11 +224,13 @@ const PurchaseOrderPage = () => {
         return order.id ?? order.purchaseOrderId ?? order._id ?? null;
     };
 
-    const { mutate: createPurchaseOrder, isPending: isCreating } = useCreatePurchaseOrder({
+    const { mutate: createPurchaseOrder, mutateAsync: createPurchaseOrderAsync, isPending: isCreating } = useCreatePurchaseOrder({
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
             setShowAddModal(false);
             setSubmitError('');
+            setPurchaseRequestActionPendingId(null);
+            setPurchaseRequestRejectReason('');
             setFormData(resetForm());
         },
         onError: (error) => {
@@ -232,32 +245,39 @@ const PurchaseOrderPage = () => {
         },
     });
 
-    const { mutate: approvePurchaseOrder } = useApprovePurchaseOrder({
+    const { mutate: approvePurchaseRequest, mutateAsync: approvePurchaseRequestAsync } = useApprovePurchaseRequest({
         onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
-            setPoActionPendingId(null);
-            setPreviewPO((prev) =>
-                prev ? { ...prev, approvalStatus: 'APPROVED' } : prev
-            );
+            await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+            setPurchaseRequestRejectReason('');
         },
         onError: (error) => {
-            setPoActionPendingId(null);
-            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to approve purchase order.');
+            setPurchaseRequestActionPendingId(null);
+            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to approve purchase request.');
         },
     });
 
-    const { mutate: rejectPurchaseOrder } = useRejectPurchaseOrder({
+    const { mutate: rejectPurchaseRequest } = useRejectPurchaseRequest({
         onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
-            setPoActionPendingId(null);
-            setPreviewPO((prev) =>
-                prev ? { ...prev, approvalStatus: 'REJECTED' } : prev
-            );
-            setPoRejectReason('');
+            await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+            setPurchaseRequestActionPendingId(null);
+            setPurchaseRequestRejectReason('');
+            setFormData((prev) => ({
+                ...prev,
+                purchaseRequestId: '',
+                poItems: [],
+                currentItem: {
+                    itemId: '',
+                    itemName: '',
+                    unitOfMeasurement: '',
+                    quantityOrdered: 1,
+                    unitPrice: '',
+                    totalPrice: ''
+                }
+            }));
         },
         onError: (error) => {
-            setPoActionPendingId(null);
-            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to reject purchase order.');
+            setPurchaseRequestActionPendingId(null);
+            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to reject purchase request.');
         },
     });
 
@@ -315,6 +335,8 @@ const PurchaseOrderPage = () => {
     const handleOpenModal = () => {
         setSubmitError('');
         setFormData(resetForm());
+        setPurchaseRequestRejectReason('');
+        setPurchaseRequestActionPendingId(null);
         setShowAddModal(true);
     };
 
@@ -322,6 +344,8 @@ const PurchaseOrderPage = () => {
         setShowAddModal(false);
         setSubmitError('');
         setFormData(resetForm());
+        setPurchaseRequestRejectReason('');
+        setPurchaseRequestActionPendingId(null);
     };
 
     const handleQuantityChange = (e) => {
@@ -428,44 +452,51 @@ const PurchaseOrderPage = () => {
         setFormData((prev) => ({ ...prev, poItems: prev.poItems.filter((item) => item.id !== id) }));
     };
 
-    const handleSubmit = () => {
-        if (!formData.officeId) return;
+    const buildPurchaseOrderPayload = () => {
+        if (!formData.officeId) {
+            return { error: 'Please select an Office first.' };
+        }
         if (!formData.purchaseRequestId) {
-            setSubmitError('Please select a Purchase Request first.');
-            return;
+            return { error: 'Please select a Purchase Request first.' };
         }
         if (!formData.vendorId) {
-            setSubmitError('Please select a Vendor first.');
-            return;
+            return { error: 'Please select a Vendor first.' };
         }
         const itemsToSubmit = [...formData.poItems];
 
         if (itemsToSubmit.length === 0) {
-            setSubmitError('Please add at least one PO line.');
-            return;
+            return { error: 'Please add at least one PO line.' };
         }
 
         const purchaseRequestId = Number.parseInt(formData.purchaseRequestId, 10);
         const vendorId = Number.parseInt(formData.vendorId, 10);
 
         if (!Number.isInteger(purchaseRequestId) || purchaseRequestId < 1) {
-            setSubmitError('Purchase Request must be a valid ID.');
-            return;
+            return { error: 'Purchase Request must be a valid ID.' };
         }
         if (!Number.isInteger(vendorId) || vendorId < 1) {
-            setSubmitError('Vendor must be a valid ID.');
-            return;
+            return { error: 'Vendor must be a valid ID.' };
         }
 
-        setSubmitError('');
-        createPurchaseOrder({
+        return {
             purchaseRequestId,
             vendorId,
             lines: itemsToSubmit.map((item) => ({
                 itemId: Number(item.itemId),
                 qty: Math.max(1, Number.parseInt(item.quantityOrdered, 10) || 1),
             })),
-        });
+        };
+    };
+
+    const handleSubmit = () => {
+        const result = buildPurchaseOrderPayload();
+        if (result?.error) {
+            setSubmitError(result.error);
+            return;
+        }
+
+        setSubmitError('');
+        createPurchaseOrder(result);
     };
 
     const handleDelete = (itemId) => {
@@ -479,24 +510,46 @@ const PurchaseOrderPage = () => {
         deletePurchaseOrder(deleteModal.poId);
     };
 
-    const handleApprovePO = () => {
-        const id = previewPO?.id;
+    const handleApproveSelectedPurchaseRequest = () => {
+        const id = selectedPurchaseRequest?.id;
         if (!id) return;
         setSubmitError('');
-        setPoActionPendingId(id);
-        approvePurchaseOrder(id);
+        setPurchaseRequestActionPendingId(id);
+        approvePurchaseRequest(id);
     };
 
-    const handleRejectPO = () => {
-        const id = previewPO?.id;
+    const handleApproveAndSaveSelectedPurchaseRequest = async () => {
+        const id = selectedPurchaseRequest?.id;
         if (!id) return;
-        if (!poRejectReason.trim()) {
+
+        const result = buildPurchaseOrderPayload();
+        if (result?.error) {
+            setSubmitError(result.error);
+            return;
+        }
+
+        setSubmitError('');
+        setPurchaseRequestActionPendingId(id);
+
+        try {
+            await approvePurchaseRequestAsync(id);
+            await createPurchaseOrderAsync(result);
+        } catch (error) {
+            setSubmitError(error?.response?.data?.message || error?.message || 'Failed to approve and save purchase order.');
+            setPurchaseRequestActionPendingId(null);
+        }
+    };
+
+    const handleRejectSelectedPurchaseRequest = () => {
+        const id = selectedPurchaseRequest?.id;
+        if (!id) return;
+        if (!purchaseRequestRejectReason.trim()) {
             setSubmitError('Rejection reason is required.');
             return;
         }
         setSubmitError('');
-        setPoActionPendingId(id);
-        rejectPurchaseOrder({ id, reason: poRejectReason.trim() });
+        setPurchaseRequestActionPendingId(id);
+        rejectPurchaseRequest({ id, reason: purchaseRequestRejectReason.trim() });
     };
 
     return (
@@ -538,7 +591,7 @@ const PurchaseOrderPage = () => {
 
             {showAddModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '90vh' }}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl flex flex-col" style={{ maxHeight: '90vh' }}>
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
                             <h2 className="text-lg font-semibold text-gray-900">Add New Purchase Order</h2>
                             <button onClick={handleCloseModal} className="text-gray-400 hover:text-gray-600 cursor-pointer">
@@ -552,6 +605,7 @@ const PurchaseOrderPage = () => {
                                     <Select
                                         placeholder="Select PR"
                                         value={formData.purchaseRequestId}
+                                        selectedLabel={selectedPurchaseRequest?.requestNo || ''}
                                         onChange={(e) => {
                                             const prId = String(e.target.value);
                                             const selectedRequest = normalizedPurchaseRequests.find(
@@ -793,21 +847,42 @@ const PurchaseOrderPage = () => {
                             )}
                         </div>
 
-                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
-                            <button
-                                onClick={handleCloseModal}
-                                className="w-40 py-3.5 border border-customBlue text-customBlue hover:bg-gray-50 rounded-lg text-sm font-medium transition cursor-pointer"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleSubmit}
-                                disabled={isCreating}
-                                className="w-40 py-3.5 bg-customBlue text-white hover:bg-customBlue/90 rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {isCreating && <Loader size={16} className="animate-spin" />}
-                                Save
-                            </button>
+                        <div className="flex flex-col gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
+                            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+                                <div className=' w-full flex-1 '>
+                                    <Input
+                                        value={purchaseRequestRejectReason}
+                                        onChange={(e) => setPurchaseRequestRejectReason(e.target.value)}
+                                        placeholder="Rejection reason"
+                                        className="text-sm py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 px-4"
+                                        disabled={!canActOnSelectedPurchaseRequest || isSelectedPurchaseRequestActionPending}
+                                    />
+                                </div>
+                                <div className='flex flex-wrap items-center gap-3'>
+                                    <button
+                                        type="button"
+                                        onClick={handleRejectSelectedPurchaseRequest}
+                                        disabled={!canActOnSelectedPurchaseRequest || isSelectedPurchaseRequestActionPending}
+                                        className="w-40 py-3.5 bg-red-600 text-white hover:bg-red-900 rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {isSelectedPurchaseRequestActionPending ? 'Processing...' : 'Reject'}
+                                    </button>
+                                    <button
+                                        onClick={handleCloseModal}
+                                        className="w-40 py-3.5 border border-customBlue text-customBlue hover:bg-gray-50 rounded-lg text-sm font-medium transition cursor-pointer"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleApproveAndSaveSelectedPurchaseRequest}
+                                        disabled={!selectedPurchaseRequest || !canActOnSelectedPurchaseRequest || isSelectedPurchaseRequestActionPending || isCreating}
+                                        className="w-40 py-3.5 bg-customBlue text-white hover:bg-customBlue/90 rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {(isCreating || isSelectedPurchaseRequestActionPending) && <Loader size={16} className="animate-spin" />}
+                                        Approve and Save
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -868,30 +943,7 @@ const PurchaseOrderPage = () => {
                             )}
                         </div>
 
-                        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    value={poRejectReason}
-                                    onChange={(e) => setPoRejectReason(e.target.value)}
-                                    placeholder="Rejection reason"
-                                    className="text-sm py-2 w-48"
-                                    disabled={poActionPendingId === previewPO.id || previewPO.approvalStatus === 'APPROVED' || previewPO.approvalStatus === 'REJECTED'}
-                                />
-                                <button
-                                    onClick={handleRejectPO}
-                                    disabled={poActionPendingId === previewPO.id || previewPO.approvalStatus === 'APPROVED' || previewPO.approvalStatus === 'REJECTED'}
-                                    className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {poActionPendingId === previewPO.id ? 'Processing...' : 'Reject'}
-                                </button>
-                                <button
-                                    onClick={handleApprovePO}
-                                    disabled={poActionPendingId === previewPO.id || previewPO.approvalStatus === 'APPROVED' || previewPO.approvalStatus === 'REJECTED'}
-                                    className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {poActionPendingId === previewPO.id ? 'Processing...' : 'Approve'}
-                                </button>
-                            </div>
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
                             <button
                                 onClick={() => setPreviewPO(null)}
                                 className="w-40 py-3.5 bg-customBlue text-white hover:bg-customBlue/90 rounded-lg text-sm font-medium transition cursor-pointer"

@@ -7,6 +7,7 @@ import DataTable from '@/components/components/DataTable';
 import FieldWrapper from '@/components/ui/FieldWrapper';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
+import SearchableSelect from '@/components/ui/SearchableSelect';
 import ValidationErrorModal from '@/components/components/ValidationErrorModal';
 import SuccessModal from '@/components/ui/SuccessModal';
 import { useOffices } from '@/hooks/office/useOffices';
@@ -16,8 +17,6 @@ import { usePurchaseRequests } from '@/hooks/inventory/purchase request/usePurch
 import { useCreatePurchaseRequest } from '@/hooks/inventory/purchase request/useCreatePurchaseRequest';
 import { useUpdatePurchaseRequest } from '@/hooks/inventory/purchase request/useUpdatePurchaseRequest';
 import { useDeletePurchaseRequest } from '@/hooks/inventory/purchase request/useDeletePurchaseRequest';
-import { useApprovePurchaseRequest } from '@/hooks/inventory/purchase request/useApprovePurchaseRequest';
-import { useRejectPurchaseRequest } from '@/hooks/inventory/purchase request/useRejectPurchaseRequest';
 import { purchaseRequestLineList, resolveItemRecordId, resolveItemUnitOfMeasurement } from '@/lib/inventoryItemMeta';
 
 function formatApiErrorMessage(error, fallback) {
@@ -38,8 +37,6 @@ const PurchaseRequestPage = () => {
   const [submitError, setSubmitError] = useState('');
   const [isEditingRequest, setIsEditingRequest] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
-  const [actionPendingId, setActionPendingId] = useState(null);
-  const [rejectReason, setRejectReason] = useState('');
 
   const [user] = useState({ id: 'admin@crescent.com', userId: 'admin' });
 
@@ -52,7 +49,6 @@ const PurchaseRequestPage = () => {
     itemName: '',
     unitOfMeasurement: '',
     quantity: 1,
-    remarks: '',
   });
 
   const normalizeList = (data) => {
@@ -163,7 +159,6 @@ const PurchaseRequestPage = () => {
         userId: request.requestedByUserId ?? request.userId ?? request.createdBy ?? request.userEmail ?? '',
         createdAt: request.createdAt || request.createdOn || request.date || new Date().toISOString(),
         status: String(request.status || request.approvalStatus || 'DRAFT').toUpperCase(),
-        remarks: request.remarks || '',
         requestedByUserId: request.requestedByUserId ?? null,
         approvedByUserId: request.approvedByUserId ?? null,
         approvedAt: request.approvedAt ?? null,
@@ -213,7 +208,6 @@ const PurchaseRequestPage = () => {
       itemName: '',
       unitOfMeasurement: '',
       quantity: 1,
-      remarks: '',
     });
     setIsEditingRequest(false);
     setSelectedRequestId(null);
@@ -281,7 +275,6 @@ const PurchaseRequestPage = () => {
     return {
       officeId: toNumericId(purchaseFormData.officeId),
       storeId: toNumericId(purchaseFormData.storeId),
-      remarks: purchaseFormData.remarks || '',
       lines: purchaseRequestItems.map((row) => ({
         itemId: toNumericId(row.itemId),
         qty: Math.max(1, parseInt(row.quantity, 10) || 1),
@@ -318,30 +311,6 @@ const PurchaseRequestPage = () => {
   const { mutate: deletePurchaseRequest } = useDeletePurchaseRequest({
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-    },
-  });
-
-  const { mutate: approvePurchaseRequest } = useApprovePurchaseRequest({
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-      setActionPendingId(null);
-      setRejectReason('');
-    },
-    onError: (error) => {
-      setActionPendingId(null);
-      setSubmitError(formatApiErrorMessage(error, 'Failed to approve purchase request.'));
-    },
-  });
-
-  const { mutate: rejectPurchaseRequest } = useRejectPurchaseRequest({
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
-      setActionPendingId(null);
-      setRejectReason('');
-    },
-    onError: (error) => {
-      setActionPendingId(null);
-      setSubmitError(formatApiErrorMessage(error, 'Failed to reject purchase request.'));
     },
   });
 
@@ -404,7 +373,6 @@ const PurchaseRequestPage = () => {
       itemName: '',
       unitOfMeasurement: '',
       quantity: 1,
-      remarks: item.remarks || '',
     });
     setShowAddModal(true);
   };
@@ -416,28 +384,6 @@ const PurchaseRequestPage = () => {
   const previewItems = previewRequest
     ? (Array.isArray(previewRequest.items) ? previewRequest.items : purchaseRequestLineList(previewRequest))
     : [];
-  const isPreviewActionPending = actionPendingId != null && String(actionPendingId) === String(previewRequest?.id);
-  const canApprove = previewRequest?.status === 'DRAFT' || previewRequest?.status === 'SUBMITTED' || previewRequest?.status === 'PENDING';
-  const canReject = canApprove;
-
-  const handleApproveFromPreview = () => {
-    if (!previewRequest?.id) return;
-    setSubmitError('');
-    setActionPendingId(previewRequest.id);
-    approvePurchaseRequest(previewRequest.id);
-  };
-
-  const handleRejectFromPreview = () => {
-    if (!previewRequest?.id) return;
-    if (!rejectReason.trim()) {
-      setSubmitError('Rejection reason is required.');
-      setTimeout(() => setSubmitError(''), 3000);
-      return;
-    }
-    setSubmitError('');
-    setActionPendingId(previewRequest.id);
-    rejectPurchaseRequest({ id: previewRequest.id, reason: rejectReason.trim() });
-  };
 
   return (
     <div className="bg-white p-8 min-h-screen scrollbar-hide m-5 rounded-lg">
@@ -479,7 +425,7 @@ const PurchaseRequestPage = () => {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl flex flex-col " style={{ maxHeight: '95vh' }}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl flex flex-col h-full " style={{ maxHeight: '95vh' }}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <h2 className="text-lg font-semibold text-gray-900">
                 {isEditingRequest ? 'Edit Purchase Request' : 'Add New Purchase Request'}
@@ -526,7 +472,7 @@ const PurchaseRequestPage = () => {
                 <h3 className="text-sm font-semibold text-gray-900 mb-4">Add Items</h3>
                 <div className="grid grid-cols-1  md:grid-cols-4 gap-4">
                   <FieldWrapper label="Item SKU / Name" required className="text-sm">
-                    <Select
+                    <SearchableSelect
                       placeholder="Select Item"
                       value={purchaseFormData.itemId}
                       onChange={(e) => {
@@ -544,7 +490,7 @@ const PurchaseRequestPage = () => {
                       className="text-sm"
                       options={itemOptions}
                     >
-                    </Select>
+                    </SearchableSelect>
                   </FieldWrapper>
 
                   <FieldWrapper label="Unit of Measurement" required className="text-sm">
@@ -572,17 +518,6 @@ const PurchaseRequestPage = () => {
                       Add Item
                     </button>
                 </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-6">
-                <FieldWrapper label="Remarks" className="text-sm">
-                  <textarea
-                    value={purchaseFormData.remarks}
-                    onChange={(e) => setPurchaseFormData((prev) => ({ ...prev, remarks: e.target.value }))}
-                    placeholder="Add remarks for this purchase request"
-                    className="text-sm w-full min-h-10 mt-2 mb-4 outline-none"
-                  />
-                </FieldWrapper>
               </div>
 
               {purchaseRequestItems.length > 0 && (
@@ -665,7 +600,6 @@ const PurchaseRequestPage = () => {
                   ['Requested By User ID', previewRequest.userId || 'N/A'],
                   ['Created On', new Date(previewRequest.createdAt).toLocaleString()],
                   ['Status', previewRequest.status || 'DRAFT'],
-                  ['Remarks', previewRequest.remarks || 'N/A'],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
@@ -703,30 +637,7 @@ const PurchaseRequestPage = () => {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Rejection reason"
-                  className="text-sm py-2 w-64 border border-gray-300 rounded-lg px-3"
-                  disabled={!canReject || isPreviewActionPending}
-                />
-                <button
-                  onClick={handleRejectFromPreview}
-                  disabled={!canReject || isPreviewActionPending}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {isPreviewActionPending ? 'Processing...' : 'Reject'}
-                </button>
-                <button
-                  onClick={handleApproveFromPreview}
-                  disabled={!canApprove || isPreviewActionPending}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {isPreviewActionPending ? 'Processing...' : 'Approve'}
-                </button>
-              </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-white shrink-0">
               <button
                 onClick={() => setPreviewRequest(null)}
                 className="w-40 py-3.5 bg-customBlue text-white hover:bg-customBlue/90 rounded-lg text-sm font-medium transition cursor-pointer"

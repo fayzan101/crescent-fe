@@ -6,6 +6,7 @@ const Select = ({
   value, 
   onChange, 
   options = [],
+  selectedLabel,
   className = "",
   disabled = false,
   name = ""
@@ -14,7 +15,7 @@ const Select = ({
   const dropdownRef = useRef(null);
 
   // Always compare as string for value matching
-  const selectedLabel = options.find(opt => String(opt.value) === String(value))?.label || placeholder;
+  const resolvedSelectedLabel = selectedLabel || options.find(opt => String(opt.value) === String(value))?.label || placeholder;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -51,7 +52,7 @@ const Select = ({
         }`}
       >
         <span className={value ? "text-gray-900" : "text-gray-400"}>
-          {selectedLabel}
+          {resolvedSelectedLabel}
         </span>
         <FiChevronDown 
           className={`text-gray-400 transition-transform ${
